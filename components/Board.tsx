@@ -9,6 +9,9 @@ import {
   HOME_COLUMN,
   YARD_SLOTS,
   Token,
+  PowerUp,
+  POWERUP_META,
+  ringCell,
   tokenCell,
   COLORS,
 } from "@/lib/ludo";
@@ -61,11 +64,13 @@ export default function Board({
   movableIds,
   onTokenClick,
   currentColor = null,
+  powerups = [],
 }: {
   state: GameState;
   movableIds: Set<string>;
   onTokenClick: (tokenId: string) => void;
   currentColor?: Color | null;
+  powerups?: PowerUp[];
 }) {
   const cells = [];
   for (let r = 0; r < 15; r++) {
@@ -116,6 +121,25 @@ export default function Board({
       {/* Center home — 4 colored triangles via conic-gradient (scales with board) */}
       <div className="center">
         <span className="center-star">★</span>
+      </div>
+
+      {/* Power-ups on the ring track (rendered below tokens) */}
+      <div className="powerups">
+        {powerups.map((pu, i) => {
+          const [row, col] = ringCell(pu.cell);
+          const left = ((col + 0.5) / 15) * 100;
+          const top = ((row + 0.5) / 15) * 100;
+          return (
+            <div
+              key={`${pu.cell}-${pu.type}-${i}`}
+              className={`powerup ${pu.type}`}
+              style={{ left: `${left}%`, top: `${top}%` }}
+              title={POWERUP_META[pu.type].label}
+            >
+              {POWERUP_META[pu.type].icon}
+            </div>
+          );
+        })}
       </div>
 
       {/* Tokens */}

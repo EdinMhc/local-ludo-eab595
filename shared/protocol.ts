@@ -3,7 +3,7 @@
 // Keep this framework-agnostic — it is imported by both `app/` (Next client)
 // and `server/` (tsx runtime).
 // ---------------------------------------------------------------------------
-import type { Color, GameState } from "../lib/ludo";
+import type { Color, GameState, PowerUpType } from "../lib/ludo";
 
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 4;
@@ -97,6 +97,7 @@ export interface ClientToServerEvents {
   "lobby:start": (ack: (r: Ack) => void) => void;
   "game:roll": () => void;
   "game:move": (p: { tokenId: string }) => void;
+  "game:usePowerup": (p: { type: PowerUpType; dice?: number }) => void;
   "game:playAgain": () => void;
   "admin:auth": (p: { password: string }, ack: (r: Ack<AdminData>) => void) => void;
   "admin:setTimer": (p: { password: string; seconds: number }, ack: (r: Ack<AdminData>) => void) => void;

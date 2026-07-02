@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 // Pip layout for each dice face on a 3x3 grid (positions 0-8).
 const FACES: Record<number, number[]> = {
   1: [4],
@@ -17,9 +19,20 @@ export default function Dice({
   value: number | null;
   rolling: boolean;
 }) {
-  const pips = value ? FACES[value] : [];
+  // While rolling, rapidly cycle random faces, then settle on the real value.
+  const [face, setFace] = useState<number | null>(value);
+
+  useEffect(() => {
+    if (rolling) {
+      const id = setInterval(() => setFace(1 + Math.floor(Math.random() * 6)), 70);
+      return () => clearInterval(id);
+    }
+    setFace(value);
+  }, [rolling, value]);
+
+  const pips = face ? FACES[face] : [];
   return (
-    <div className={`dice ${rolling ? "rolling" : ""}`}>
+    <div className={`dice ${rolling ? "rolling" : ""}`} aria-label={`Dice ${face ?? ""}`}>
       {Array.from({ length: 9 }, (_, i) => (
         <span
           key={i}

@@ -7,10 +7,12 @@ import {
   Color,
   COLORS,
   GameState,
+  PowerUpType,
   createGame,
   rollDice,
   applyMove,
   movableTokens,
+  usePowerup as enginePowerup,
 } from "../lib/ludo";
 import {
   AdminRoomSummary,
@@ -328,6 +330,17 @@ export class RoomManager {
     if (!legal) return;
     this.applyMoveInternal(room, tokenId);
     this.postAction(room);
+  }
+
+  usePowerup(clientId: string, type: PowerUpType, dice?: number): void {
+    const room = this.roomOfClient(clientId);
+    if (!room || room.phase !== "playing" || !room.game) return;
+    if (room.game.winner || room.game.awaitingMove) return; // before rolling only
+    if (this.currentPlayerId(room) !== clientId) return;
+    const updated = enginePowerup(room.game, type, dice);
+    if (updated === room.game) return; // no-op (didn't own the item)
+    room.game = updated;
+    this.broadcast(room); // keep the existing move-timer deadline running
   }
 
   playAgain(clientId: string): void {

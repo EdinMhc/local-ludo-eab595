@@ -56,7 +56,14 @@ export default function Page() {
   if (r.room.game) {
     return (
       <main className="app">
-        <GameView room={r.room} clientId={r.clientId} onRoll={r.roll} onMove={r.move} onLeave={r.leaveRoom} />
+        <GameView
+          room={r.room}
+          clientId={r.clientId}
+          onRoll={r.roll}
+          onMove={r.move}
+          onUsePowerup={r.usePowerup}
+          onLeave={r.leaveRoom}
+        />
         {r.room.phase === "finished" && (
           <RoundOver
             room={r.room}

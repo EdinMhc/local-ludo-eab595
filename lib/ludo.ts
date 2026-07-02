@@ -23,6 +23,42 @@ export const COLOR_LABEL: Record<Color, string> = {
   blue: "Blue",
 };
 
+// ---------------------------------------------------------------------------
+// Power-ups
+// ---------------------------------------------------------------------------
+export type PowerUpType = "shield" | "dice_control" | "double";
+
+export const POWERUP_TYPES: PowerUpType[] = ["shield", "dice_control", "double"];
+
+// Exactly this many of EACH type live on the board at all times (3 x 3 = 9).
+export const POWERUP_PER_TYPE = 3;
+
+export interface PowerUp {
+  cell: number; // ring index 0..51
+  type: PowerUpType;
+}
+
+export const POWERUP_META: Record<
+  PowerUpType,
+  { label: string; icon: string; desc: string }
+> = {
+  shield: {
+    label: "Shield",
+    icon: "🛡️",
+    desc: "Protects your tokens from capture until your next turn.",
+  },
+  dice_control: {
+    label: "Dice Control",
+    icon: "🎲",
+    desc: "Choose your exact dice value on your next roll.",
+  },
+  double: {
+    label: "Double Distance",
+    icon: "⚡",
+    desc: "Doubles your dice value for your next move.",
+  },
+};
+
 // A token position:
 //  - state "yard": locked in the home yard (index 0..3 slot in yard)
 //  - state "track": on the shared ring; `steps` = 0..50 progress from this
@@ -48,12 +84,19 @@ export interface Player {
   color: Color;
   tokens: Token[];
   active: boolean; // is this seat in the game?
+  // Power-up state
+  inventory: PowerUpType[]; // unlimited hoarding
+  shielded: boolean; // capture immunity until this player's next turn
+  forcedDice: number | null; // dice control: next roll uses this value
+  doubleNext: boolean; // double distance: next move distance x2
 }
 
 export interface GameState {
   players: Player[]; // only active players present
   currentPlayerIndex: number; // index into players
   dice: number | null;
+  lastRoll: number | null; // last rolled value, persists until the next roll (for display)
+  rollId: number; // increments on every roll (drives client roll animation)
   consecutiveSixes: number;
   // moves that must be made after a roll before rolling again
   awaitingMove: boolean;
@@ -61,6 +104,7 @@ export interface GameState {
   winner: Color | null;
   message: string;
   rolling: boolean;
+  powerups: PowerUp[]; // always 9 on the board (3 of each type)
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +131,8 @@ export const RING: [number, number][] = [
   [7, 0],
   [6, 0],
 ];
+
+export const RING_SIZE = 52;
 
 // Entry index into RING for each color's first track cell.
 export const ENTRY_INDEX: Record<Color, number> = {
@@ -148,6 +194,11 @@ export function tokenCell(token: Token, slotIndex: number): [number, number] {
   return HOME_COLUMN[token.color][homeIdx];
 }
 
+// [row, col] for a ring index (used to render power-ups).
+export function ringCell(ringIdx: number): [number, number] {
+  return RING[((ringIdx % 52) + 52) % 52];
+}
+
 // Ring index a track token currently occupies (for capture / safe checks).
 export function ringIndexOf(token: Token): number | null {
   if (token.state === "track" && token.progress <= 50) {
@@ -158,6 +209,41 @@ export function ringIndexOf(token: Token): number | null {
 
 export function isSafeRingIndex(idx: number): boolean {
   return SAFE_RING_INDICES.includes(idx);
+}
+
+// ---------------------------------------------------------------------------
+// Power-up placement
+// ---------------------------------------------------------------------------
+// Valid spawn = any ring cell (0..51) not already holding a power-up.
+// Yard and home-stretch cells are not ring cells, so they are excluded by
+// construction.
+function randomFreeRingCell(occupied: Set<number>): number | null {
+  const free: number[] = [];
+  for (let i = 0; i < RING_SIZE; i++) if (!occupied.has(i)) free.push(i);
+  if (free.length === 0) return null;
+  return free[Math.floor(Math.random() * free.length)];
+}
+
+function relocatePowerup(state: GameState, type: PowerUpType): void {
+  const occupied = new Set(state.powerups.map((p) => p.cell));
+  const cell = randomFreeRingCell(occupied);
+  if (cell !== null) state.powerups.push({ cell, type });
+}
+
+function spawnInitialPowerups(): PowerUp[] {
+  const pool: PowerUpType[] = [];
+  for (const t of POWERUP_TYPES) {
+    for (let i = 0; i < POWERUP_PER_TYPE; i++) pool.push(t);
+  }
+  const occupied = new Set<number>();
+  const result: PowerUp[] = [];
+  for (const type of pool) {
+    const cell = randomFreeRingCell(occupied);
+    if (cell === null) break;
+    occupied.add(cell);
+    result.push({ cell, type });
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -173,18 +259,25 @@ export function createGame(activeColors: Color[]): GameState {
       state: "yard" as TokenState,
       progress: -1,
     })),
+    inventory: [],
+    shielded: false,
+    forcedDice: null,
+    doubleNext: false,
   }));
 
   return {
     players,
     currentPlayerIndex: 0,
     dice: null,
+    lastRoll: null,
+    rollId: 0,
     consecutiveSixes: 0,
     awaitingMove: false,
     bonusRoll: false,
     winner: null,
     message: `${cap(players[0].color)}'s turn — roll the dice!`,
     rolling: false,
+    powerups: spawnInitialPowerups(),
   };
 }
 
@@ -198,6 +291,11 @@ function cap(s: string) {
 // The max progress is 57 (center goal). To reach goal you need EXACT roll.
 export const GOAL_PROGRESS = 57;
 
+// Effective step distance for a player (Double Distance doubles it).
+function effectiveDistance(player: Player, dice: number): number {
+  return player.doubleNext ? dice * 2 : dice;
+}
+
 export function canTokenMove(token: Token, dice: number): boolean {
   if (token.state === "done") return false;
   if (token.state === "yard") {
@@ -209,7 +307,37 @@ export function canTokenMove(token: Token, dice: number): boolean {
 }
 
 export function movableTokens(player: Player, dice: number): Token[] {
-  return player.tokens.filter((t) => canTokenMove(t, dice));
+  const eff = effectiveDistance(player, dice);
+  return player.tokens.filter((t) => {
+    if (t.state === "done") return false;
+    if (t.state === "yard") return dice === 6; // release uses the ACTUAL roll
+    return t.progress + eff <= GOAL_PROGRESS;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Power-up activation (before rolling, on your own turn).
+// ---------------------------------------------------------------------------
+export function usePowerup(
+  state: GameState,
+  type: PowerUpType,
+  diceValue?: number
+): GameState {
+  if (state.winner || state.awaitingMove) return state; // only before a roll
+  const player = state.players[state.currentPlayerIndex];
+  const idx = player.inventory.indexOf(type);
+  if (idx < 0) return state; // don't own one
+
+  const next = structuredCloneGame(state);
+  const p = next.players[next.currentPlayerIndex];
+  p.inventory.splice(p.inventory.indexOf(type), 1);
+  if (type === "shield") p.shielded = true;
+  else if (type === "double") p.doubleNext = true;
+  else if (type === "dice_control") {
+    p.forcedDice = Math.max(1, Math.min(6, Math.floor(diceValue ?? 6)));
+  }
+  next.message = `${cap(p.color)} activated ${POWERUP_META[type].label}!`;
+  return next;
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +354,7 @@ export function applyMove(state: GameState, tokenId: string): MoveResult {
   const next: GameState = structuredCloneGame(state);
   const player = next.players[next.currentPlayerIndex];
   const token = player.tokens.find((t) => t.id === tokenId)!;
+  const eff = effectiveDistance(player, dice);
 
   let captured = false;
   let reachedGoal = false;
@@ -235,7 +364,7 @@ export function applyMove(state: GameState, tokenId: string): MoveResult {
     token.state = "track";
     token.progress = 0;
   } else {
-    token.progress += dice;
+    token.progress += eff;
     if (token.progress >= GOAL_PROGRESS) {
       token.progress = GOAL_PROGRESS;
       token.state = "done";
@@ -247,11 +376,28 @@ export function applyMove(state: GameState, tokenId: string): MoveResult {
     }
   }
 
-  // Capture check — only for track cells that are not safe.
+  // Double Distance is consumed by this move.
+  player.doubleNext = false;
+
+  // Power-up pickup — ONLY on an exact landing on a ring cell.
+  const landRing = ringIndexOf(token);
+  if (landRing !== null) {
+    const pIdx = next.powerups.findIndex((pu) => pu.cell === landRing);
+    if (pIdx >= 0) {
+      const picked = next.powerups[pIdx];
+      player.inventory.push(picked.type);
+      next.powerups.splice(pIdx, 1);
+      relocatePowerup(next, picked.type); // keep 3-of-each on the board
+    }
+  }
+
+  // Capture check — only for track cells that are not safe. Shielded owners
+  // are immune (their tokens cannot be captured).
   const myRing = ringIndexOf(token);
   if (myRing !== null && !isSafeRingIndex(myRing)) {
     for (const p of next.players) {
       if (p.color === token.color) continue;
+      if (p.shielded) continue; // protected by Shield power-up
       for (const t of p.tokens) {
         const r = ringIndexOf(t);
         if (r === myRing) {
@@ -305,10 +451,15 @@ export interface RollResult {
 
 export function rollDice(state: GameState, forced?: number): RollResult {
   const next: GameState = structuredCloneGame(state);
-  const value = forced ?? 1 + Math.floor(Math.random() * 6);
-  next.dice = value;
-  next.bonusRoll = false;
   const player = next.players[next.currentPlayerIndex];
+  // Priority: explicit test override > Dice Control power-up > random.
+  const value =
+    forced ?? player.forcedDice ?? 1 + Math.floor(Math.random() * 6);
+  player.forcedDice = null; // consume Dice Control
+  next.dice = value;
+  next.lastRoll = value;
+  next.rollId = (state.rollId ?? 0) + 1;
+  next.bonusRoll = false;
 
   if (value === 6) {
     next.consecutiveSixes += 1;
@@ -344,13 +495,23 @@ export function rollDice(state: GameState, forced?: number): RollResult {
 }
 
 function advanceTurn(state: GameState) {
+  // Per-turn power-up effects expire for the player leaving their turn.
+  const leaving = state.players[state.currentPlayerIndex];
+  leaving.doubleNext = false;
+  leaving.forcedDice = null;
+
   state.currentPlayerIndex =
     (state.currentPlayerIndex + 1) % state.players.length;
+
+  // Shield lasted through the opponents' turns; it expires as protection
+  // returns to the shielded player's own turn.
+  const entering = state.players[state.currentPlayerIndex];
+  entering.shielded = false;
+
   state.dice = null;
   state.awaitingMove = false;
   state.bonusRoll = false;
-  const p = state.players[state.currentPlayerIndex];
-  state.message = `${cap(p.color)}'s turn — roll the dice!`;
+  state.message = `${cap(entering.color)}'s turn — roll the dice!`;
 }
 
 // structuredClone may not be available everywhere; provide a safe deep clone.

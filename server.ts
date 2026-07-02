@@ -120,6 +120,7 @@ app.prepare().then(() => {
     // ---- gameplay ----
     socket.on("game:roll", () => manager.roll(clientId));
     socket.on("game:move", ({ tokenId }) => manager.move(clientId, tokenId));
+    socket.on("game:usePowerup", ({ type, dice }) => manager.usePowerup(clientId, type, dice));
     socket.on("game:playAgain", () => manager.playAgain(clientId));
 
     // ---- admin ----

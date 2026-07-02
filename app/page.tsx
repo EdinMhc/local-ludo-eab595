@@ -84,6 +84,7 @@ export default function Page() {
         room={r.room}
         clientId={r.clientId}
         onPickColor={r.pickColor}
+        onSetMode={r.setMode}
         onReady={r.setReady}
         onStart={r.startGame}
         onLeave={r.leaveRoom}

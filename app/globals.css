@@ -55,7 +55,11 @@ body {
 
 .app {
   min-height: 100vh;
-  padding: clamp(16px, 4vw, 40px) 16px 48px;
+  padding:
+    calc(clamp(14px, 4vw, 40px) + env(safe-area-inset-top, 0px))
+    calc(16px + env(safe-area-inset-right, 0px))
+    48px
+    calc(16px + env(safe-area-inset-left, 0px));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -508,8 +512,41 @@ body {
   border: 2px solid rgba(255, 255, 255, 0.95);
   box-shadow: 0 3px 6px rgba(0, 0, 0, 0.45), inset 0 -3px 6px rgba(0, 0, 0, 0.3), inset 0 3px 5px rgba(255, 255, 255, 0.45);
   transform: translate(-50%, -50%);
-  transition: left 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), top 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* One cell at a time — smooth glide between adjacent cells as the token walks. */
+  transition: left 0.16s ease-in-out, top 0.16s ease-in-out;
   z-index: 5;
+}
+.token.walking {
+  z-index: 9;
+  box-shadow: 0 8px 12px rgba(0, 0, 0, 0.5), inset 0 -3px 6px rgba(0, 0, 0, 0.3), inset 0 3px 5px rgba(255, 255, 255, 0.5);
+}
+/* Already finished before this client loaded → just hidden, no replay. */
+.token.done-gone { opacity: 0; pointer-events: none; }
+
+/* Shielded player's tokens glow with a protective force-field. */
+.token.shielded {
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.75), 0 0 14px 4px rgba(56, 189, 248, 0.55),
+    0 3px 6px rgba(0, 0, 0, 0.45);
+  animation: shield-pulse 1.2s ease-in-out infinite;
+}
+@keyframes shield-pulse {
+  50% {
+    box-shadow: 0 0 0 5px rgba(56, 189, 248, 0.4), 0 0 20px 7px rgba(56, 189, 248, 0.5),
+      0 3px 6px rgba(0, 0, 0, 0.45);
+  }
+}
+
+/* Token reached the center home → celebrate, then vanish. */
+.token.arrived {
+  animation: token-arrive 0.8s ease forwards;
+  pointer-events: none;
+  z-index: 12;
+}
+@keyframes token-arrive {
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  35% { transform: translate(-50%, -50%) scale(1.55) rotate(8deg); opacity: 1; }
+  70% { transform: translate(-50%, -50%) scale(1.2) rotate(-6deg); opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(0.12); opacity: 0; }
 }
 .token.red { background: radial-gradient(circle at 35% 30%, #ff8a9a, var(--red)); }
 .token.green { background: radial-gradient(circle at 35% 30%, #6ee7a0, var(--green)); }
@@ -563,12 +600,73 @@ body {
   align-self: center;
   justify-self: center;
 }
-.dice.rolling { animation: dice-roll 0.42s ease; }
+.dice.rolling { animation: dice-roll 0.6s ease-in-out infinite; }
 @keyframes dice-roll {
   0% { transform: rotate(0) scale(1); }
-  30% { transform: rotate(-160deg) scale(1.15); }
-  70% { transform: rotate(200deg) scale(1.1); }
+  30% { transform: rotate(-140deg) scale(1.12); }
+  70% { transform: rotate(160deg) scale(1.08); }
   100% { transform: rotate(360deg) scale(1); }
+}
+
+/* ---------------- Dice cluster (double dice + cues) ---------------- */
+.dice-cluster { display: flex; flex-direction: column; align-items: center; gap: 7px; margin: 18px auto 0; }
+.dice-row { display: flex; gap: 12px; }
+.dice-cluster .dice { margin: 0; }
+.dice-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 11px;
+  border-radius: 999px;
+  animation: badge-pop 0.3s ease;
+}
+.dice-badge.dbl { background: rgba(245, 158, 11, 0.22); color: #fcd34d; }
+.dice-badge.ctrl { background: rgba(168, 85, 247, 0.22); color: #d8b4fe; }
+@keyframes badge-pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+/* ---------------- Avatar shield force-field ---------------- */
+.avatar-ring { position: relative; }
+.avatar-wrap.shielded .avatar-ring {
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.7), 0 0 20px 6px rgba(56, 189, 248, 0.55);
+  animation: shield-pulse 1.2s ease-in-out infinite;
+}
+.avatar-shield {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  font-size: 0.95rem;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+
+/* ---------------- Capture burst ---------------- */
+.capture-fx-layer { position: absolute; inset: 0; pointer-events: none; z-index: 20; }
+.capture-fx {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: calc(min(94vw, 540px) / 15 * 0.95);
+  animation: capture-float 1.3s ease-out forwards;
+}
+@keyframes capture-float {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+  20% { opacity: 1; transform: translate(-50%, -120%) scale(1.2); }
+  100% { opacity: 0; transform: translate(-50%, -240%) scale(1); }
+}
+
+/* ---------------- Win confetti ---------------- */
+.confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.confetti-piece {
+  position: absolute;
+  top: -14px;
+  width: 9px;
+  height: 14px;
+  border-radius: 2px;
+  opacity: 0.9;
+  animation-name: confetti-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+@keyframes confetti-fall {
+  0% { transform: translateY(-20px) rotate(0deg); }
+  100% { transform: translateY(108vh) rotate(720deg); }
 }
 
 /* ---------------- Round over overlay ---------------- */
@@ -737,6 +835,36 @@ body {
   from { transform: translate(-50%, 20px); opacity: 0; }
   to { transform: translate(-50%, 0); opacity: 1; }
 }
+
+/* ---------------- Lobby: mode selector + team tags ---------------- */
+.mode-select { margin-bottom: 18px; }
+.mode-tabs { display: flex; gap: 8px; }
+.mode-tab {
+  flex: 1;
+  min-height: 46px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.mode-tab.on { background: rgba(168, 85, 247, 0.22); border-color: var(--accent); }
+.mode-tab:disabled { cursor: default; opacity: 0.7; }
+.mode-hint { margin-top: 8px; font-size: 0.82rem; color: var(--ink-dim); }
+.team-tag {
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  margin-left: 2px;
+}
+.team-tag.t0 { background: rgba(234, 179, 8, 0.22); color: #fde68a; }
+.team-tag.t1 { background: rgba(37, 99, 235, 0.28); color: #bfdbfe; }
 
 /* ---------------- Game top bar ---------------- */
 .game-topbar {
@@ -926,8 +1054,11 @@ body {
     -webkit-backdrop-filter: blur(14px);
     box-shadow: 0 -12px 30px -12px rgba(0, 0, 0, 0.7);
   }
-  .ab-main { display: flex; align-items: center; gap: 14px; }
-  .ab-dice .dice { margin: 0; width: 62px; height: 62px; }
+  .ab-main { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .ab-dice { flex: 0 0 auto; }
+  .ab-dice .dice { margin: 0; width: 52px; height: 52px; }
+  .dice-cluster { margin: 0; }
+  .dice-row { gap: 8px; }
   .ab-controls { flex: 1; display: flex; flex-direction: column; gap: 6px; }
   .ab-status { font-weight: 800; font-size: 0.92rem; }
   .ab-roll { min-height: 54px; }

@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Color, COLORS, COLOR_HEX, COLOR_LABEL } from "@/lib/ludo";
+import { Color, COLORS, COLOR_HEX, COLOR_LABEL, GameMode, TEAM_OF, TEAM_NAME } from "@/lib/ludo";
 import type { RoomView } from "@/shared/protocol";
 
 export default function Lobby({
   room,
   clientId,
   onPickColor,
+  onSetMode,
   onReady,
   onStart,
   onLeave,
@@ -15,6 +16,7 @@ export default function Lobby({
   room: RoomView;
   clientId: string;
   onPickColor: (color: Color) => void;
+  onSetMode: (mode: GameMode) => void;
   onReady: (ready: boolean) => void;
   onStart: () => Promise<string | null>;
   onLeave: () => void;
@@ -27,10 +29,11 @@ export default function Lobby({
     room.players.filter((p) => p.id !== clientId && p.color).map((p) => p.color as Color)
   );
 
+  const teamsOk = room.mode !== "teams" || room.players.length === 4;
   const enoughPlayers =
     room.players.length >= room.minPlayers && room.players.length <= room.maxPlayers;
   const allReady = room.players.every((p) => p.ready && p.color);
-  const canStart = isHost && enoughPlayers && allReady;
+  const canStart = isHost && enoughPlayers && allReady && teamsOk;
 
   function copyCode() {
     navigator.clipboard?.writeText(room.code).then(() => {
@@ -64,6 +67,32 @@ export default function Lobby({
           Share this code. Everyone picks a color, marks ready, then the host starts.
         </p>
 
+        <div className="mode-select">
+          <p className="muted-label">Game mode</p>
+          <div className="mode-tabs">
+            <button
+              className={`mode-tab ${room.mode === "ffa" ? "on" : ""}`}
+              disabled={!isHost}
+              onClick={() => onSetMode("ffa")}
+            >
+              Free-for-all
+            </button>
+            <button
+              className={`mode-tab ${room.mode === "teams" ? "on" : ""}`}
+              disabled={!isHost}
+              onClick={() => onSetMode("teams")}
+            >
+              2v2 Teams
+            </button>
+          </div>
+          {room.mode === "teams" && (
+            <p className="mode-hint">
+              Teams are diagonal — <strong>Red + Yellow</strong> vs <strong>Green + Blue</strong>. Needs
+              4 players; both partners must finish to win.
+            </p>
+          )}
+        </div>
+
         <div className="players-list">
           {room.players.map((p) => (
             <div key={p.id} className={`player-row ${p.id === clientId ? "me" : ""}`}>
@@ -75,6 +104,9 @@ export default function Lobby({
                 {p.name}
                 {p.id === clientId && <em> (you)</em>}
                 {p.isHost && <span className="crown" title="Host">👑</span>}
+                {room.mode === "teams" && p.color && (
+                  <span className={`team-tag t${TEAM_OF[p.color]}`}>{TEAM_NAME[TEAM_OF[p.color]]}</span>
+                )}
                 {!p.connected && <span className="offline">offline</span>}
               </span>
               <span className={`ready-tag ${p.ready ? "yes" : "no"}`}>

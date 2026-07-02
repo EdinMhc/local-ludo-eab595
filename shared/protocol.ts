@@ -3,7 +3,7 @@
 // Keep this framework-agnostic — it is imported by both `app/` (Next client)
 // and `server/` (tsx runtime).
 // ---------------------------------------------------------------------------
-import type { Color, GameState, PowerUpType } from "../lib/ludo";
+import type { Color, GameState, GameMode, PowerUpType } from "../lib/ludo";
 
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 4;
@@ -32,11 +32,13 @@ export interface Placement {
   name: string;
   color: Color;
   place: number; // 1 = winner
+  team?: number; // teams mode: team index
 }
 
 export interface RoundResult {
   winnerName: string;
   winnerColor: Color;
+  winnerTeam?: number | null;
   placements: Placement[];
   endedAt: number;
 }
@@ -51,6 +53,7 @@ export interface ScoreRow {
 export interface RoomView {
   code: string;
   phase: RoomPhase;
+  mode: GameMode;
   players: PlayerView[];
   hostId: string;
   game: GameState | null;
@@ -93,6 +96,7 @@ export interface ClientToServerEvents {
   "room:join": (p: { code: string; name: string }, ack: (r: Ack<{ code: string }>) => void) => void;
   "room:leave": () => void;
   "lobby:pickColor": (p: { color: Color }, ack: (r: Ack) => void) => void;
+  "lobby:setMode": (p: { mode: GameMode }, ack: (r: Ack) => void) => void;
   "lobby:ready": (p: { ready: boolean }) => void;
   "lobby:start": (ack: (r: Ack) => void) => void;
   "game:roll": () => void;

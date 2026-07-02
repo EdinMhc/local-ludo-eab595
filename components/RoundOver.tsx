@@ -1,6 +1,6 @@
 "use client";
 
-import { COLOR_HEX } from "@/lib/ludo";
+import { COLOR_HEX, TEAM_NAME } from "@/lib/ludo";
 import type { RoomView } from "@/shared/protocol";
 
 const MEDALS = ["🥇", "🥈", "🥉", "4️⃣"];
@@ -21,14 +21,35 @@ export default function RoundOver({
   const round = room.lastRound;
   if (!round) return null;
 
-  const iWon = round.placements.find((p) => p.place === 1)?.playerId === clientId;
+  const isTeams = round.winnerTeam != null;
+  const iWon = round.placements.some((p) => p.place === 1 && p.playerId === clientId);
+
+  const confettiColors = ["#e11d48", "#16a34a", "#eab308", "#2563eb", "#a855f7", "#ec4899"];
 
   return (
     <div className="overlay">
+      <div className="confetti" aria-hidden>
+        {Array.from({ length: 28 }).map((_, i) => (
+          <span
+            key={i}
+            className="confetti-piece"
+            style={{
+              left: `${(i * 3.7) % 100}%`,
+              background: confettiColors[i % confettiColors.length],
+              animationDelay: `${(i % 7) * 0.18}s`,
+              animationDuration: `${2.2 + (i % 5) * 0.35}s`,
+            }}
+          />
+        ))}
+      </div>
       <div className="card roundover-card">
         <div className="confetti-emoji">{iWon ? "🎉" : "🏁"}</div>
         <h2 className="roundover-title">
-          {iWon ? "You win!" : `${round.winnerName} wins!`}
+          {iWon
+            ? isTeams
+              ? "Your team wins!"
+              : "You win!"
+            : `${round.winnerName} wins!`}
         </h2>
 
         <div className="placements">
@@ -39,6 +60,7 @@ export default function RoundOver({
               <span className="placement-name">
                 {p.name}
                 {p.playerId === clientId && <em> (you)</em>}
+                {p.team != null && <span className={`team-tag t${p.team}`}>{TEAM_NAME[p.team]}</span>}
               </span>
             </div>
           ))}

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
-import type { Color, PowerUpType } from "@/lib/ludo";
+import type { Color, GameMode, PowerUpType } from "@/lib/ludo";
 import type {
   Ack,
   AdminData,
@@ -45,6 +45,7 @@ export interface UseRoom {
   joinRoom: (code: string, name: string) => Promise<boolean>;
   leaveRoom: () => void;
   pickColor: (color: Color) => void;
+  setMode: (mode: GameMode) => void;
   setReady: (ready: boolean) => void;
   startGame: () => Promise<string | null>; // returns error string, or null on success
   roll: () => void;
@@ -159,6 +160,12 @@ export function useRoom(): UseRoom {
     });
   }, []);
 
+  const setMode = useCallback((mode: GameMode) => {
+    socketRef.current?.emit("lobby:setMode", { mode }, (res: Ack) => {
+      if (!res.ok) setError(res.error);
+    });
+  }, []);
+
   const setReady = useCallback((ready: boolean) => {
     socketRef.current?.emit("lobby:ready", { ready });
   }, []);
@@ -233,6 +240,7 @@ export function useRoom(): UseRoom {
     joinRoom,
     leaveRoom,
     pickColor,
+    setMode,
     setReady,
     startGame,
     roll,

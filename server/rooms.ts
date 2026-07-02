@@ -6,8 +6,10 @@
 import {
   Color,
   COLORS,
+  GameMode,
   GameState,
   PowerUpType,
+  TEAM_NAME,
   createGame,
   rollDice,
   applyMove,
@@ -40,6 +42,7 @@ interface Seat {
 interface Room {
   code: string;
   phase: RoomPhase;
+  mode: GameMode;
   hostId: string;
   seats: Map<string, Seat>;
   game: GameState | null;
@@ -109,6 +112,7 @@ export class RoomManager {
     const room: Room = {
       code,
       phase: "lobby",
+      mode: "ffa",
       hostId: clientId,
       seats: new Map(),
       game: null,
@@ -263,11 +267,24 @@ export class RoomManager {
     return {};
   }
 
+  setMode(clientId: string, mode: GameMode): { error?: string } {
+    const room = this.roomOfClient(clientId);
+    if (!room) return { error: "You are not in a room." };
+    if (room.hostId !== clientId) return { error: "Only the host can change the mode." };
+    if (room.phase !== "lobby") return { error: "Cannot change mode mid-game." };
+    room.mode = mode;
+    this.broadcast(room);
+    return {};
+  }
+
   setReady(clientId: string, ready: boolean): void {
     const room = this.roomOfClient(clientId);
     if (!room || room.phase !== "lobby") return;
     const seat = room.seats.get(clientId);
-    if (!seat || !seat.color) return;
+    if (!seat) return;
+    // Safeguard: never leave a player unable to ready for lack of a color.
+    if (!seat.color) seat.color = this.freeColor(room);
+    if (!seat.color) return;
     seat.ready = ready;
     this.broadcast(room);
   }
@@ -283,6 +300,9 @@ export class RoomManager {
     if (active.length > MAX_PLAYERS) return { error: `Max ${MAX_PLAYERS} players.` };
     if (active.some((s) => !s.color)) return { error: "Everyone must pick a color." };
     if (active.some((s) => !s.ready)) return { error: "All players must be ready." };
+    if (room.mode === "teams" && active.length !== 4) {
+      return { error: "2v2 teams needs exactly 4 players." };
+    }
 
     // Canonical board order (red, green, yellow, blue) among chosen colors.
     const colorSeats = active
@@ -290,7 +310,7 @@ export class RoomManager {
       .sort((a, b) => COLORS.indexOf(a.color) - COLORS.indexOf(b.color));
     const colors = colorSeats.map((s) => s.color);
 
-    room.game = createGame(colors);
+    room.game = createGame(colors, room.mode);
     room.colorToPlayerId = new Map(colorSeats.map((s) => [s.color, s.id]));
     room.moveTimerSeconds = getMoveTimerSeconds();
     room.phase = "playing";
@@ -358,22 +378,39 @@ export class RoomManager {
   private finishGame(room: Room, winnerColor: Color): void {
     const g = room.game!;
     const placements = this.computePlacements(room, g, winnerColor);
-    const winnerSeatId = room.colorToPlayerId.get(winnerColor)!;
-    const winnerSeat = room.seats.get(winnerSeatId);
-    const winnerName = winnerSeat?.name ?? placements.find((p) => p.place === 1)?.name ?? "Winner";
+    const teamMode = g.mode === "teams" && g.teams && g.winnerTeam != null;
+
+    // Ids that count as winners (both partners in teams mode).
+    const winnerIds = new Set<string>();
+    if (teamMode) {
+      for (const p of g.players) {
+        if (g.teams![p.color] === g.winnerTeam) {
+          const id = room.colorToPlayerId.get(p.color);
+          if (id) winnerIds.add(id);
+        }
+      }
+    } else {
+      const id = room.colorToPlayerId.get(winnerColor);
+      if (id) winnerIds.add(id);
+    }
+
+    const winnerName = teamMode
+      ? TEAM_NAME[g.winnerTeam!]
+      : room.seats.get([...winnerIds][0] ?? "")?.name ?? placements.find((p) => p.place === 1)?.name ?? "Winner";
 
     // Cumulative room scores.
     placements.forEach((p) => {
       const entry = room.scores.get(p.playerId) ?? { name: p.name, wins: 0, games: 0 };
       entry.name = p.name;
       entry.games += 1;
-      if (p.place === 1) entry.wins += 1;
+      if (winnerIds.has(p.playerId)) entry.wins += 1;
       room.scores.set(p.playerId, entry);
     });
 
     room.lastRound = {
       winnerName,
       winnerColor,
+      winnerTeam: teamMode ? g.winnerTeam : null,
       placements,
       endedAt: Date.now(),
     };
@@ -394,28 +431,52 @@ export class RoomManager {
   }
 
   private computePlacements(room: Room, g: GameState, winnerColor: Color): Placement[] {
+    const toPlacement = (color: Color, place: number): Placement => {
+      const playerId = room.colorToPlayerId.get(color)!;
+      const seat = room.seats.get(playerId);
+      return {
+        playerId,
+        name: seat?.name ?? color,
+        color,
+        place,
+        team: g.teams ? g.teams[color] : undefined,
+      };
+    };
+
+    // Teams: rank the two TEAMS, winning team's members share place 1.
+    if (g.mode === "teams" && g.teams) {
+      const teamStat: Record<number, { done: number; progress: number }> = {};
+      g.players.forEach((p) => {
+        const tid = g.teams![p.color];
+        teamStat[tid] ??= { done: 0, progress: 0 };
+        teamStat[tid].done += p.tokens.filter((t) => t.state === "done").length;
+        teamStat[tid].progress += p.tokens.reduce((s, t) => s + Math.max(0, t.progress), 0);
+      });
+      const teams = [...new Set(g.players.map((p) => g.teams![p.color]))].sort((a, b) => {
+        if (a === g.winnerTeam) return -1;
+        if (b === g.winnerTeam) return 1;
+        return teamStat[b].done - teamStat[a].done || teamStat[b].progress - teamStat[a].progress;
+      });
+      const teamPlace: Record<number, number> = {};
+      teams.forEach((t, i) => (teamPlace[t] = i + 1));
+      return g.players
+        .map((p) => toPlacement(p.color, teamPlace[g.teams![p.color]]))
+        .sort((a, b) => a.place - b.place);
+    }
+
+    // FFA: rank by winner, then done / progress.
     const ranked = g.players
-      .map((p) => {
-        const done = p.tokens.filter((t) => t.state === "done").length;
-        const progress = p.tokens.reduce((sum, t) => sum + Math.max(0, t.progress), 0);
-        return { color: p.color, done, progress };
-      })
+      .map((p) => ({
+        color: p.color,
+        done: p.tokens.filter((t) => t.state === "done").length,
+        progress: p.tokens.reduce((sum, t) => sum + Math.max(0, t.progress), 0),
+      }))
       .sort((a, b) => {
         if (a.color === winnerColor) return -1;
         if (b.color === winnerColor) return 1;
         return b.done - a.done || b.progress - a.progress;
       });
-
-    return ranked.map((r, i) => {
-      const playerId = room.colorToPlayerId.get(r.color)!;
-      const seat = room.seats.get(playerId);
-      return {
-        playerId,
-        name: seat?.name ?? r.color,
-        color: r.color,
-        place: i + 1,
-      };
-    });
+    return ranked.map((r, i) => toPlacement(r.color, i + 1));
   }
 
   private resetToLobby(room: Room): void {
@@ -544,6 +605,7 @@ export class RoomManager {
     return {
       code: room.code,
       phase: room.phase,
+      mode: room.mode,
       players,
       hostId: room.hostId,
       game: room.game,

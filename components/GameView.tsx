@@ -20,6 +20,7 @@ function PlayerAvatar({
   color,
   active,
   connected = true,
+  shielded = false,
   deadline,
   total,
 }: {
@@ -27,6 +28,7 @@ function PlayerAvatar({
   color: Color;
   active: boolean;
   connected?: boolean;
+  shielded?: boolean;
   deadline: number | null;
   total: number;
 }) {
@@ -54,11 +56,12 @@ function PlayerAvatar({
   }
 
   return (
-    <div className={`avatar-wrap ${active ? "active" : ""} ${low ? "low" : ""}`}>
+    <div className={`avatar-wrap ${active ? "active" : ""} ${low ? "low" : ""} ${shielded ? "shielded" : ""}`}>
       <div className="avatar-ring" style={{ background: ring }}>
         <div className="avatar" style={{ background: COLOR_HEX[color] }}>
           {initial}
         </div>
+        {shielded && <span className="avatar-shield" title="Shielded">🛡️</span>}
       </div>
       <span className="avatar-name">
         {name}
@@ -110,7 +113,7 @@ export default function GameView({
   function triggerRollAnim() {
     setRolling(true);
     if (rollTimer.current) clearTimeout(rollTimer.current);
-    rollTimer.current = setTimeout(() => setRolling(false), 650);
+    rollTimer.current = setTimeout(() => setRolling(false), 1000);
   }
   useEffect(() => {
     if (!game) return;
@@ -130,13 +133,32 @@ export default function GameView({
   const canUse = canRoll; // power-ups are activated before rolling
   const displayedDice = game.dice ?? game.lastRoll;
 
+  // Current player's armed effects (visible to everyone).
+  const curEngine = game.players[game.currentPlayerIndex];
+  const showDouble = !game.winner && !!curEngine?.doubleNext;
+  const forcedDice = !game.winner ? curEngine?.forcedDice ?? null : null;
+
   function handleRoll() {
     if (!canRoll) return;
     triggerRollAnim();
     onRoll();
   }
 
-  const invCounts: Record<PowerUpType, number> = { shield: 0, dice_control: 0, double: 0 };
+  // Dice cluster — two dice when Double is armed, plus a Dice-Control cue.
+  function diceCluster() {
+    return (
+      <div className={`dice-cluster ${showDouble ? "double" : ""}`}>
+        <div className="dice-row">
+          <Dice value={displayedDice} rolling={rolling} />
+          {showDouble && <Dice value={displayedDice} rolling={rolling} />}
+        </div>
+        {showDouble && <span className="dice-badge dbl">⚡ Double distance</span>}
+        {forcedDice != null && <span className="dice-badge ctrl">🎲 Locked to {forcedDice}</span>}
+      </div>
+    );
+  }
+
+  const invCounts: Record<PowerUpType, number> = { shield: 0, dice_control: 0, double: 0, plus_one: 0 };
   (myEngine?.inventory ?? []).forEach((t) => (invCounts[t] += 1));
 
   const rollLabel = !isMyTurn
@@ -223,6 +245,7 @@ export default function GameView({
             color={p.color ?? "red"}
             active={p.id === room.currentPlayerId && playing}
             connected={p.connected}
+            shielded={!!game.players.find((gp) => gp.color === p.color)?.shielded}
             deadline={room.turnDeadline}
             total={room.moveTimerSeconds}
           />
@@ -250,7 +273,7 @@ export default function GameView({
 
           <div className="game-message">{game.message}</div>
 
-          <Dice value={displayedDice} rolling={rolling} />
+          {diceCluster()}
 
           {playing && (
             <button className="btn primary roll-btn" onClick={handleRoll} disabled={!canRoll}>
@@ -286,9 +309,7 @@ export default function GameView({
         <div className="action-bar">
           <div className="ab-inventory">{renderInventory()}</div>
           <div className="ab-main">
-            <div className="ab-dice">
-              <Dice value={displayedDice} rolling={rolling} />
-            </div>
+            <div className="ab-dice">{diceCluster()}</div>
             <div className="ab-controls">
               <div className="ab-status" style={{ color: currentColor ? COLOR_HEX[currentColor] : "#fff" }}>
                 {isMyTurn ? "Your turn" : `${currentPlayer?.name ?? "—"}'s turn`}

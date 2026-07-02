@@ -23,15 +23,30 @@ export const COLOR_LABEL: Record<Color, string> = {
   blue: "Blue",
 };
 
+// Game modes. "teams" is 2v2 with fixed diagonal partners.
+export type GameMode = "ffa" | "teams";
+
+// Fixed 2v2 partners (diagonal): Team 0 = Red + Yellow, Team 1 = Green + Blue.
+export const TEAM_OF: Record<Color, number> = {
+  red: 0,
+  yellow: 0,
+  green: 1,
+  blue: 1,
+};
+export const TEAM_LABEL: Record<number, string> = { 0: "Red + Yellow", 1: "Green + Blue" };
+export const TEAM_NAME: Record<number, string> = { 0: "Team 1", 1: "Team 2" };
+
 // ---------------------------------------------------------------------------
 // Power-ups
 // ---------------------------------------------------------------------------
-export type PowerUpType = "shield" | "dice_control" | "double";
+export type PowerUpType = "shield" | "dice_control" | "double" | "plus_one";
 
+// Storable power-ups: collected into a player's inventory, activated before rolling.
 export const POWERUP_TYPES: PowerUpType[] = ["shield", "dice_control", "double"];
 
-// Exactly this many of EACH type live on the board at all times (3 x 3 = 9).
+// Board counts: 3 of each storable type, plus 4 instant "+1 roll" pickups.
 export const POWERUP_PER_TYPE = 3;
+export const PLUS_ONE_COUNT = 4;
 
 export interface PowerUp {
   cell: number; // ring index 0..51
@@ -56,6 +71,11 @@ export const POWERUP_META: Record<
     label: "Double Distance",
     icon: "⚡",
     desc: "Doubles your dice value for your next move.",
+  },
+  plus_one: {
+    label: "+1 Roll",
+    icon: "➕",
+    desc: "Land on it to roll again immediately.",
   },
 };
 
@@ -101,10 +121,13 @@ export interface GameState {
   // moves that must be made after a roll before rolling again
   awaitingMove: boolean;
   bonusRoll: boolean; // player gets to roll again (6 or capture)
-  winner: Color | null;
+  winner: Color | null; // FFA: winning color. Teams: a color from the winning team.
+  winnerTeam: number | null; // teams mode: index of the winning team
   message: string;
   rolling: boolean;
-  powerups: PowerUp[]; // always 9 on the board (3 of each type)
+  powerups: PowerUp[]; // 3 of each storable type + 4 "+1" pickups
+  mode: GameMode;
+  teams: Record<Color, number> | null; // color → team id (teams mode); null in ffa
 }
 
 // ---------------------------------------------------------------------------
@@ -214,12 +237,15 @@ export function isSafeRingIndex(idx: number): boolean {
 // ---------------------------------------------------------------------------
 // Power-up placement
 // ---------------------------------------------------------------------------
-// Valid spawn = any ring cell (0..51) not already holding a power-up.
-// Yard and home-stretch cells are not ring cells, so they are excluded by
-// construction.
+// Valid spawn = a ring cell (0..51) that is NOT a safe cell (colored start
+// squares + star squares — where tokens can't be captured) and not already
+// holding a power-up. Yard and home-stretch cells are not ring cells, so they
+// are excluded by construction.
 function randomFreeRingCell(occupied: Set<number>): number | null {
   const free: number[] = [];
-  for (let i = 0; i < RING_SIZE; i++) if (!occupied.has(i)) free.push(i);
+  for (let i = 0; i < RING_SIZE; i++) {
+    if (!occupied.has(i) && !isSafeRingIndex(i)) free.push(i);
+  }
   if (free.length === 0) return null;
   return free[Math.floor(Math.random() * free.length)];
 }
@@ -235,6 +261,7 @@ function spawnInitialPowerups(): PowerUp[] {
   for (const t of POWERUP_TYPES) {
     for (let i = 0; i < POWERUP_PER_TYPE; i++) pool.push(t);
   }
+  for (let i = 0; i < PLUS_ONE_COUNT; i++) pool.push("plus_one");
   const occupied = new Set<number>();
   const result: PowerUp[] = [];
   for (const type of pool) {
@@ -247,9 +274,41 @@ function spawnInitialPowerups(): PowerUp[] {
 }
 
 // ---------------------------------------------------------------------------
+// Teams / friendliness
+// ---------------------------------------------------------------------------
+export function areFriendly(state: GameState, a: Color, b: Color): boolean {
+  if (a === b) return true; // same player's own tokens
+  if (state.mode === "teams" && state.teams) return state.teams[a] === state.teams[b];
+  return false;
+}
+
+// How many tokens FRIENDLY to `forColor` occupy this ring cell (excluding one id).
+function friendlyCountOnRing(
+  state: GameState,
+  forColor: Color,
+  ring: number,
+  excludeId: string
+): number {
+  let n = 0;
+  for (const p of state.players) {
+    if (!areFriendly(state, p.color, forColor)) continue;
+    for (const t of p.tokens) {
+      if (t.id === excludeId) continue;
+      if (ringIndexOf(t) === ring) n++;
+    }
+  }
+  return n;
+}
+
+function teamColors(state: GameState, team: number): Color[] {
+  if (!state.teams) return [];
+  return state.players.map((p) => p.color).filter((c) => state.teams![c] === team);
+}
+
+// ---------------------------------------------------------------------------
 // Game setup
 // ---------------------------------------------------------------------------
-export function createGame(activeColors: Color[]): GameState {
+export function createGame(activeColors: Color[], mode: GameMode = "ffa"): GameState {
   const players: Player[] = activeColors.map((color) => ({
     color,
     active: true,
@@ -265,6 +324,11 @@ export function createGame(activeColors: Color[]): GameState {
     doubleNext: false,
   }));
 
+  const teams =
+    mode === "teams"
+      ? (Object.fromEntries(activeColors.map((c) => [c, TEAM_OF[c]])) as Record<Color, number>)
+      : null;
+
   return {
     players,
     currentPlayerIndex: 0,
@@ -275,9 +339,12 @@ export function createGame(activeColors: Color[]): GameState {
     awaitingMove: false,
     bonusRoll: false,
     winner: null,
+    winnerTeam: null,
     message: `${cap(players[0].color)}'s turn — roll the dice!`,
     rolling: false,
     powerups: spawnInitialPowerups(),
+    mode,
+    teams,
   };
 }
 
@@ -380,38 +447,58 @@ export function applyMove(state: GameState, tokenId: string): MoveResult {
   player.doubleNext = false;
 
   // Power-up pickup — ONLY on an exact landing on a ring cell.
+  let gotPlusOne = false;
   const landRing = ringIndexOf(token);
   if (landRing !== null) {
     const pIdx = next.powerups.findIndex((pu) => pu.cell === landRing);
     if (pIdx >= 0) {
       const picked = next.powerups[pIdx];
-      player.inventory.push(picked.type);
       next.powerups.splice(pIdx, 1);
-      relocatePowerup(next, picked.type); // keep 3-of-each on the board
-    }
-  }
-
-  // Capture check — only for track cells that are not safe. Shielded owners
-  // are immune (their tokens cannot be captured).
-  const myRing = ringIndexOf(token);
-  if (myRing !== null && !isSafeRingIndex(myRing)) {
-    for (const p of next.players) {
-      if (p.color === token.color) continue;
-      if (p.shielded) continue; // protected by Shield power-up
-      for (const t of p.tokens) {
-        const r = ringIndexOf(t);
-        if (r === myRing) {
-          // send home
-          t.state = "yard";
-          t.progress = -1;
-          captured = true;
-        }
+      relocatePowerup(next, picked.type); // keep the board balanced
+      if (picked.type === "plus_one") {
+        gotPlusOne = true; // instant extra roll, not stored
+      } else {
+        player.inventory.push(picked.type);
       }
     }
   }
 
-  // Win check
-  if (player.tokens.every((t) => t.state === "done")) {
+  // Capture check — only for track cells that are not safe. Friendly tokens
+  // (same color, or same team in 2v2) are never captured. A token is also
+  // protected if a friendly token shares its cell (block rule), and shielded
+  // owners are immune.
+  const myRing = ringIndexOf(token);
+  if (myRing !== null && !isSafeRingIndex(myRing)) {
+    for (const p of next.players) {
+      if (areFriendly(next, p.color, token.color)) continue; // don't eat friendlies
+      if (p.shielded) continue; // protected by Shield power-up
+      for (const t of p.tokens) {
+        if (ringIndexOf(t) !== myRing) continue;
+        if (friendlyCountOnRing(next, t.color, myRing, t.id) > 0) continue; // blocked
+        t.state = "yard";
+        t.progress = -1;
+        captured = true;
+      }
+    }
+  }
+
+  // Win check — FFA: all your tokens home. Teams: both partners fully home.
+  if (next.mode === "teams" && next.teams) {
+    const myTeam = next.teams[token.color];
+    const cols = teamColors(next, myTeam);
+    const teamHome = next.players
+      .filter((p) => cols.includes(p.color))
+      .every((p) => p.tokens.every((t) => t.state === "done"));
+    if (teamHome) {
+      next.winner = token.color;
+      next.winnerTeam = myTeam;
+      next.message = `${TEAM_NAME[myTeam]} wins the game! 🎉`;
+      next.awaitingMove = false;
+      next.bonusRoll = false;
+      next.dice = dice;
+      return { state: next, captured, reachedGoal };
+    }
+  } else if (player.tokens.every((t) => t.state === "done")) {
     next.winner = player.color;
     next.message = `${cap(player.color)} wins the game! 🎉`;
     next.awaitingMove = false;
@@ -422,13 +509,14 @@ export function applyMove(state: GameState, tokenId: string): MoveResult {
 
   next.awaitingMove = false;
 
-  // Decide bonus roll: rolling a 6, or making a capture, grants another roll.
-  const grantsBonus = dice === 6 || captured;
+  // Bonus roll: a 6, a capture, or picking up a "+1" grants another roll.
+  const grantsBonus = dice === 6 || captured || gotPlusOne;
   if (grantsBonus) {
     next.bonusRoll = true;
     next.dice = null;
     let reason = "";
-    if (captured && dice === 6) reason = "Capture + a six! Roll again.";
+    if (gotPlusOne) reason = "➕ Bonus — roll again!";
+    else if (captured && dice === 6) reason = "Capture + a six! Roll again.";
     else if (captured) reason = "Capture! Bonus roll — go again.";
     else reason = "You rolled a six — roll again!";
     next.message = `${cap(player.color)}: ${reason}`;

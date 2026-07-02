@@ -24,7 +24,7 @@ export default function Dice({
 
   useEffect(() => {
     if (rolling) {
-      const id = setInterval(() => setFace(1 + Math.floor(Math.random() * 6)), 70);
+      const id = setInterval(() => setFace(1 + Math.floor(Math.random() * 6)), 100);
       return () => clearInterval(id);
     }
     setFace(value);

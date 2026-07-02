@@ -110,6 +110,11 @@ app.prepare().then(() => {
       ack(res.error ? { ok: false, error: res.error } : { ok: true });
     });
 
+    socket.on("lobby:setMode", ({ mode }, ack) => {
+      const res = manager.setMode(clientId, mode);
+      ack(res.error ? { ok: false, error: res.error } : { ok: true });
+    });
+
     socket.on("lobby:ready", ({ ready }) => manager.setReady(clientId, ready));
 
     socket.on("lobby:start", (ack) => {

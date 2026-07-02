@@ -4,3 +4,11 @@ out
 .DS_Store
 *.log
 .env*.local
+*.tsbuildinfo
+
+# Local SQLite database (production DB lives on the Railway /data volume)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+/data

@@ -60,10 +60,12 @@ export default function Board({
   state,
   movableIds,
   onTokenClick,
+  currentColor = null,
 }: {
   state: GameState;
   movableIds: Set<string>;
   onTokenClick: (tokenId: string) => void;
+  currentColor?: Color | null;
 }) {
   const cells = [];
   for (let r = 0; r < 15; r++) {
@@ -102,7 +104,7 @@ export default function Board({
 
       {/* Yard boxes */}
       {COLORS.map((color) => (
-        <div key={color} className={`yard ${color}`}>
+        <div key={color} className={`yard ${color} ${currentColor === color ? "active" : ""}`}>
           <div className="yard-inner">
             {[0, 1, 2, 3].map((i) => (
               <div key={i} className="yard-slot" />
@@ -111,12 +113,9 @@ export default function Board({
         </div>
       ))}
 
-      {/* Center triangles */}
+      {/* Center home — 4 colored triangles via conic-gradient (scales with board) */}
       <div className="center">
-        <div className="tri top" />
-        <div className="tri right" />
-        <div className="tri bottom" />
-        <div className="tri left" />
+        <span className="center-star">★</span>
       </div>
 
       {/* Tokens */}

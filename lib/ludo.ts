@@ -16,6 +16,13 @@ export const COLOR_HEX: Record<Color, string> = {
   blue: "#1e88e5",
 };
 
+export const COLOR_LABEL: Record<Color, string> = {
+  red: "Red",
+  green: "Green",
+  yellow: "Yellow",
+  blue: "Blue",
+};
+
 // A token position:
 //  - state "yard": locked in the home yard (index 0..3 slot in yard)
 //  - state "track": on the shared ring; `steps` = 0..50 progress from this

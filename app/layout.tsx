@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Ludo — Classic Board Game",
+  title: "Local-Ludo — Online Multiplayer",
   description:
-    "A classic 2–4 player hot-seat Ludo board game. Roll the dice, race your four tokens home, and capture your opponents!",
+    "Play Ludo online with 2–4 friends. Create a room, share the code, ready up and race your tokens home.",
 };
 
 export default function RootLayout({

@@ -14,6 +14,12 @@ import {
 } from "@/lib/ludo";
 import type { RoomView } from "@/shared/protocol";
 
+// Dice roll suspense: play the full (slowed) spin, then hold the settled face a
+// beat before the turn visibly transitions. Roll window is ~40% longer than the
+// old 1000ms so the roll feels weighty.
+const ROLL_ANIM_MS = 1400;
+const ROLL_HOLD_MS = 800;
+
 /* Avatar with a depleting countdown ring when it's this player's turn. */
 function PlayerAvatar({
   name,
@@ -78,6 +84,7 @@ export default function GameView({
   onMove,
   onUsePowerup,
   onLeave,
+  onWalkingChange,
 }: {
   room: RoomView;
   clientId: string;
@@ -85,12 +92,19 @@ export default function GameView({
   onMove: (tokenId: string) => void;
   onUsePowerup: (type: PowerUpType, dice?: number) => void;
   onLeave: () => void;
+  onWalkingChange?: (walking: boolean) => void;
 }) {
   const game = room.game;
   const [rolling, setRolling] = useState(false);
+  // `resolving` stays true through the spin AND the post-roll hold, so the turn
+  // indicator / controls don't flip to the next player until the die has settled.
+  const [resolving, setResolving] = useState(false);
   const [dicePicker, setDicePicker] = useState(false);
   const prevRollId = useRef(game?.rollId ?? 0);
   const rollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gameRef = useRef(game);
+  gameRef.current = game;
 
   const isMyTurn = room.currentPlayerId === clientId;
   const playing = room.phase === "playing";
@@ -102,18 +116,33 @@ export default function GameView({
 
   const movableIds = useMemo(() => {
     const set = new Set<string>();
-    if (game && isMyTurn && playing && game.awaitingMove && game.dice != null && !game.winner) {
+    // Hold token highlights back until the die has finished settling.
+    if (!resolving && game && isMyTurn && playing && game.awaitingMove && game.dice != null && !game.winner) {
       const player = game.players[game.currentPlayerIndex];
       movableTokens(player, game.dice).forEach((t) => set.add(t.id));
     }
     return set;
-  }, [game, isMyTurn, playing]);
+  }, [game, isMyTurn, playing, resolving]);
 
   // Animate the dice whenever a new roll happens (any player), for everyone.
   function triggerRollAnim() {
     setRolling(true);
+    setResolving(true);
     if (rollTimer.current) clearTimeout(rollTimer.current);
-    rollTimer.current = setTimeout(() => setRolling(false), 1000);
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    rollTimer.current = setTimeout(() => {
+      setRolling(false);
+      // If the roll passed the turn (no legal move / three-sixes forfeit), hold the
+      // settled face a beat before revealing the next player. If a move is required,
+      // reveal immediately so the active player isn't kept waiting.
+      const g = gameRef.current;
+      const passedTurn = !!g && !g.awaitingMove && !g.winner;
+      if (passedTurn) {
+        holdTimer.current = setTimeout(() => setResolving(false), ROLL_HOLD_MS);
+      } else {
+        setResolving(false);
+      }
+    }, ROLL_ANIM_MS);
   }
   useEffect(() => {
     if (!game) return;
@@ -123,14 +152,17 @@ export default function GameView({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game?.rollId]);
-  useEffect(() => () => { if (rollTimer.current) clearTimeout(rollTimer.current); }, []);
+  useEffect(() => () => {
+    if (rollTimer.current) clearTimeout(rollTimer.current);
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+  }, []);
 
   if (!game) return null;
 
   // Roll is gated ONLY by server state — never by the local animation flag,
   // so the button can never get stuck between turns.
   const canRoll = playing && isMyTurn && !game.awaitingMove && !game.winner;
-  const canUse = canRoll; // power-ups are activated before rolling
+  const canUse = canRoll && !resolving; // power-ups are activated before rolling
   const displayedDice = game.dice ?? game.lastRoll;
 
   // Current player's armed effects (visible to everyone).
@@ -139,7 +171,7 @@ export default function GameView({
   const forcedDice = !game.winner ? curEngine?.forcedDice ?? null : null;
 
   function handleRoll() {
-    if (!canRoll) return;
+    if (!canRoll || resolving) return;
     triggerRollAnim();
     onRoll();
   }
@@ -161,7 +193,15 @@ export default function GameView({
   const invCounts: Record<PowerUpType, number> = { shield: 0, dice_control: 0, double: 0, plus_one: 0 };
   (myEngine?.inventory ?? []).forEach((t) => (invCounts[t] += 1));
 
-  const rollLabel = !isMyTurn
+  const turnLabel = resolving
+    ? "🎲 Rolling…"
+    : isMyTurn
+    ? "Your turn"
+    : `${currentPlayer?.name ?? "—"}'s turn`;
+
+  const rollLabel = resolving
+    ? "Rolling…"
+    : !isMyTurn
     ? `Waiting for ${currentPlayer?.name ?? "…"}`
     : game.awaitingMove
     ? "Tap a token"
@@ -259,24 +299,25 @@ export default function GameView({
           currentColor={currentColor}
           powerups={game.powerups}
           onTokenClick={onMove}
+          onWalkingChange={onWalkingChange}
         />
 
         {/* Desktop side panel */}
         <div className="card game-panel">
           <div
-            className={`turn-badge ${isMyTurn ? "mine" : ""}`}
-            style={{ background: currentColor ? COLOR_HEX[currentColor] : "#444" }}
+            className={`turn-badge ${!resolving && isMyTurn ? "mine" : ""}`}
+            style={{ background: !resolving && currentColor ? COLOR_HEX[currentColor] : "#444" }}
           >
             <span className="swatch small" style={{ background: "#fff" }} />
-            {isMyTurn ? "Your turn" : `${currentPlayer?.name ?? "—"}'s turn`}
+            {turnLabel}
           </div>
 
-          <div className="game-message">{game.message}</div>
+          <div className="game-message">{resolving ? "🎲 Rolling the dice…" : game.message}</div>
 
           {diceCluster()}
 
           {playing && (
-            <button className="btn primary roll-btn" onClick={handleRoll} disabled={!canRoll}>
+            <button className="btn primary roll-btn" onClick={handleRoll} disabled={!canRoll || resolving}>
               {rollLabel}
             </button>
           )}
@@ -311,10 +352,10 @@ export default function GameView({
           <div className="ab-main">
             <div className="ab-dice">{diceCluster()}</div>
             <div className="ab-controls">
-              <div className="ab-status" style={{ color: currentColor ? COLOR_HEX[currentColor] : "#fff" }}>
-                {isMyTurn ? "Your turn" : `${currentPlayer?.name ?? "—"}'s turn`}
+              <div className="ab-status" style={{ color: !resolving && currentColor ? COLOR_HEX[currentColor] : "#fff" }}>
+                {turnLabel}
               </div>
-              <button className="btn primary ab-roll" onClick={handleRoll} disabled={!canRoll}>
+              <button className="btn primary ab-roll" onClick={handleRoll} disabled={!canRoll || resolving}>
                 {rollLabel}
               </button>
             </div>

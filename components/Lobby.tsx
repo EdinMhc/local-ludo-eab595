@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Color, COLORS, COLOR_HEX, COLOR_LABEL, GameMode, TEAM_OF, TEAM_NAME } from "@/lib/ludo";
+import { Color, COLORS, COLOR_HEX, COLOR_LABEL, DIAGONAL_PARTNER, GameMode, TEAM_OF, TEAM_NAME } from "@/lib/ludo";
 import type { RoomView } from "@/shared/protocol";
 
 export default function Lobby({
@@ -28,6 +28,13 @@ export default function Lobby({
   const takenByOthers = new Set(
     room.players.filter((p) => p.id !== clientId && p.color).map((p) => p.color as Color)
   );
+  // In a 2-player game the two seats must sit in diagonally opposite corners, so
+  // once the other player has a colour this seat is locked to its diagonal partner.
+  const otherPlayer = room.players.find((p) => p.id !== clientId);
+  const forcedColor: Color | null =
+    room.players.length === 2 && otherPlayer?.color
+      ? DIAGONAL_PARTNER[otherPlayer.color]
+      : null;
 
   const teamsOk = room.mode !== "teams" || room.players.length === 4;
   const enoughPlayers =
@@ -128,20 +135,33 @@ export default function Lobby({
             {COLORS.map((c) => {
               const taken = takenByOthers.has(c);
               const mine = me?.color === c;
+              const blockedByDiagonal = forcedColor !== null && c !== forcedColor && !mine;
+              const disabled = taken || blockedByDiagonal;
               return (
                 <button
                   key={c}
-                  className={`color-swatch ${mine ? "mine" : ""} ${taken ? "taken" : ""}`}
+                  className={`color-swatch ${mine ? "mine" : ""} ${disabled ? "taken" : ""}`}
                   style={{ background: COLOR_HEX[c] }}
-                  disabled={taken}
+                  disabled={disabled}
                   onClick={() => onPickColor(c)}
-                  title={taken ? `${COLOR_LABEL[c]} taken` : COLOR_LABEL[c]}
+                  title={
+                    taken
+                      ? `${COLOR_LABEL[c]} taken`
+                      : blockedByDiagonal
+                      ? `2-player games sit in opposite corners — pick ${COLOR_LABEL[forcedColor!]}`
+                      : COLOR_LABEL[c]
+                  }
                 >
                   {mine && <span className="check">✓</span>}
                 </button>
               );
             })}
           </div>
+          {forcedColor && (
+            <p className="mode-hint">
+              2-player game — you take the opposite corner (<strong>{COLOR_LABEL[forcedColor]}</strong>).
+            </p>
+          )}
         </div>
 
         <div className="lobby-actions">

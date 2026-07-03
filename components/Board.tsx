@@ -13,6 +13,7 @@ import {
   PowerUp,
   POWERUP_META,
   ringCell,
+  ringIndexOf,
   tokenCell,
   COLORS,
 } from "@/lib/ludo";
@@ -83,12 +84,14 @@ export default function Board({
   onTokenClick,
   currentColor = null,
   powerups = [],
+  onWalkingChange,
 }: {
   state: GameState;
   movableIds: Set<string>;
   onTokenClick: (tokenId: string) => void;
   currentColor?: Color | null;
   powerups?: PowerUp[];
+  onWalkingChange?: (walking: boolean) => void;
 }) {
   const [display, setDisplay] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {};
@@ -200,6 +203,75 @@ export default function Board({
     }
   }, [display]);
 
+  // --- Power-up pickup timing (#2) ---------------------------------------
+  // Keep a power-up icon on its square until the moving token physically arrives.
+  // We only swap the shown list to the authoritative one once nothing is walking,
+  // then flourish at any square whose icon was just collected.
+  const [shownPowerups, setShownPowerups] = useState<PowerUp[]>(powerups);
+  const shownPuRef = useRef<PowerUp[]>(powerups);
+  const puFxId = useRef(0);
+  const [pickupFx, setPickupFx] = useState<
+    { key: number; left: number; top: number; icon: string }[]
+  >([]);
+  useEffect(() => {
+    const anyWalking = state.players.some((p) =>
+      p.tokens.some((t) => {
+        const tgt = targetOf(t);
+        const d = display[t.id];
+        return tgt >= 0 && d != null && d >= 0 && d < tgt;
+      })
+    );
+    if (anyWalking) return; // hold icons in place while a token is walking toward them
+
+    const prev = shownPuRef.current;
+    const newCells = new Set(powerups.map((p) => p.cell));
+    const added: { key: number; left: number; top: number; icon: string }[] = [];
+    prev.forEach((pu) => {
+      if (newCells.has(pu.cell)) return; // still on the board
+      const landed = state.players.some((p) =>
+        p.tokens.some((t) => ringIndexOf(t) === pu.cell)
+      );
+      if (!landed) return; // gone for a non-pickup reason — no flourish
+      const [row, col] = ringCell(pu.cell);
+      added.push({
+        key: puFxId.current++,
+        left: ((col + 0.5) / 15) * 100,
+        top: ((row + 0.5) / 15) * 100,
+        icon: POWERUP_META[pu.type].icon,
+      });
+    });
+
+    const sameList =
+      prev.length === powerups.length &&
+      prev.every((p, i) => p.cell === powerups[i].cell && p.type === powerups[i].type);
+    if (!sameList) {
+      shownPuRef.current = powerups;
+      setShownPowerups(powerups);
+    }
+    if (added.length) {
+      setPickupFx((f) => [...f, ...added]);
+      const ids = new Set(added.map((a) => a.key));
+      setTimeout(() => setPickupFx((f) => f.filter((x) => !ids.has(x.key))), 900);
+    }
+  }, [display, powerups, state]);
+
+  // Report walking status upward so the win overlay waits for the final home-entry
+  // animation before covering the board (#1).
+  const walkingRef = useRef(false);
+  useEffect(() => {
+    const walking = state.players.some((p) =>
+      p.tokens.some((t) => {
+        const tgt = targetOf(t);
+        const d = display[t.id];
+        return tgt >= 0 && d != null && d >= 0 && d < tgt;
+      })
+    );
+    if (walking !== walkingRef.current) {
+      walkingRef.current = walking;
+      onWalkingChange?.(walking);
+    }
+  }, [display, state, onWalkingChange]);
+
   const cells = [];
   for (let r = 0; r < 15; r++) {
     for (let c = 0; c < 15; c++) {
@@ -252,7 +324,7 @@ export default function Board({
       </div>
 
       <div className="powerups">
-        {powerups.map((pu, i) => {
+        {shownPowerups.map((pu, i) => {
           const [row, col] = ringCell(pu.cell);
           const left = ((col + 0.5) / 15) * 100;
           const top = ((row + 0.5) / 15) * 100;
@@ -321,6 +393,19 @@ export default function Board({
             style={{ left: `${fx.left}%`, top: `${fx.top}%` }}
           >
             😢
+          </span>
+        ))}
+      </div>
+
+      {/* Power-up pickup flourishes */}
+      <div className="capture-fx-layer">
+        {pickupFx.map((fx) => (
+          <span
+            key={fx.key}
+            className="powerup-pickup-fx"
+            style={{ left: `${fx.left}%`, top: `${fx.top}%` }}
+          >
+            {fx.icon}
           </span>
         ))}
       </div>

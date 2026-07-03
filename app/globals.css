@@ -432,6 +432,12 @@ body {
 .cell.green-path { background: var(--grad-green); }
 .cell.yellow-path { background: var(--grad-yellow); }
 .cell.blue-path { background: var(--grad-blue); }
+/* Safe / star squares — prominent amber ring + glowing star so the safe status
+   reads instantly on white path cells AND on the four coloured start-cell gradients. */
+.cell.safe {
+  box-shadow: inset 0 0 0 2px rgba(251, 191, 36, 0.78), inset 0 0 9px rgba(245, 158, 11, 0.42);
+  z-index: 1;
+}
 .cell.safe::after {
   content: "★";
   position: absolute;
@@ -439,8 +445,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(15, 23, 42, 0.28);
-  font-size: 0.8em;
+  color: #fde68a;
+  font-size: 0.92em;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.6), 0 0 7px rgba(245, 158, 11, 0.85);
 }
 
 .yard {
@@ -584,23 +591,26 @@ body {
   width: 78px;
   height: 78px;
   margin: 18px auto 0;
+  box-sizing: border-box;
   background: linear-gradient(150deg, #ffffff, #e2e8f0);
   border-radius: 16px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
-  padding: 11px;
+  /* Relative padding + relative pip size so pips stay centred at ANY die size
+     (desktop 78px, mobile action-bar 52px). Fixed px broke the mobile layout. */
+  padding: 14%;
   box-shadow: 0 10px 22px -6px rgba(0, 0, 0, 0.6), inset 0 2px 3px rgba(255, 255, 255, 0.9);
 }
 .pip {
-  width: 12px;
-  height: 12px;
+  width: 58%;
+  height: 58%;
+  aspect-ratio: 1;
   background: radial-gradient(circle at 35% 30%, #475569, #0f172a);
   border-radius: 50%;
-  align-self: center;
-  justify-self: center;
+  place-self: center;
 }
-.dice.rolling { animation: dice-roll 0.6s ease-in-out infinite; }
+.dice.rolling { animation: dice-roll 0.85s ease-in-out infinite; }
 @keyframes dice-roll {
   0% { transform: rotate(0) scale(1); }
   30% { transform: rotate(-140deg) scale(1.12); }
@@ -649,6 +659,21 @@ body {
   0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
   20% { opacity: 1; transform: translate(-50%, -120%) scale(1.2); }
   100% { opacity: 0; transform: translate(-50%, -240%) scale(1); }
+}
+
+/* Power-up pickup flourish — icon pops and floats up as the token collects it. */
+.powerup-pickup-fx {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: calc(min(94vw, 540px) / 15 * 0.92);
+  animation: powerup-pickup 0.9s ease-out forwards;
+  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.9));
+  z-index: 21;
+}
+@keyframes powerup-pickup {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+  30% { opacity: 1; transform: translate(-50%, -90%) scale(1.45); }
+  100% { opacity: 0; transform: translate(-50%, -150%) scale(1); }
 }
 
 /* ---------------- Win confetti ---------------- */

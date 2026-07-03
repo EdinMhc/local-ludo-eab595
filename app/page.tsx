@@ -11,6 +11,8 @@ import AdminPanel from "@/components/AdminPanel";
 export default function Page() {
   const r = useRoom();
   const [showAdmin, setShowAdmin] = useState(false);
+  const [boardWalking, setBoardWalking] = useState(false);
+  const [overlayReady, setOverlayReady] = useState(false);
 
   // Auto-dismiss the error toast.
   useEffect(() => {
@@ -18,6 +20,23 @@ export default function Page() {
     const id = setTimeout(() => r.clearError(), 4000);
     return () => clearTimeout(id);
   }, [r.error, r.clearError]);
+
+  // Delay the round-over overlay until the winning token has finished animating
+  // into the home triangle (#1), with a hard fallback so it can never get stuck.
+  const phase = r.room?.phase;
+  useEffect(() => {
+    if (phase !== "finished") {
+      setOverlayReady(false);
+      return;
+    }
+    const hard = setTimeout(() => setOverlayReady(true), 3500);
+    if (boardWalking) return () => clearTimeout(hard);
+    const soft = setTimeout(() => setOverlayReady(true), 850);
+    return () => {
+      clearTimeout(hard);
+      clearTimeout(soft);
+    };
+  }, [phase, boardWalking]);
 
   const toast = r.error ? (
     <div className="toast" onClick={r.clearError}>
@@ -63,8 +82,9 @@ export default function Page() {
           onMove={r.move}
           onUsePowerup={r.usePowerup}
           onLeave={r.leaveRoom}
+          onWalkingChange={setBoardWalking}
         />
-        {r.room.phase === "finished" && (
+        {r.room.phase === "finished" && overlayReady && (
           <RoundOver
             room={r.room}
             clientId={r.clientId}

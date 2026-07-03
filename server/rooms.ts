@@ -6,10 +6,14 @@
 import {
   Color,
   COLORS,
+  COLOR_LABEL,
+  DIAGONAL_PARTNER,
   GameMode,
   GameState,
   PowerUpType,
+  SEAT_COLOR_PRIORITY,
   TEAM_NAME,
+  TEAM_OF,
   createGame,
   rollDice,
   applyMove,
@@ -92,7 +96,8 @@ export class RoomManager {
   private freeColor(room: Room): Color | null {
     const taken = new Set<Color>();
     room.seats.forEach((s) => s.color && taken.add(s.color));
-    return COLORS.find((c) => !taken.has(c)) ?? null;
+    // Diagonal-first priority so the first two players default to opposite corners.
+    return SEAT_COLOR_PRIORITY.find((c) => !taken.has(c)) ?? null;
   }
 
   private currentColor(room: Room): Color | null {
@@ -262,6 +267,17 @@ export class RoomManager {
       (s) => s.id !== clientId && s.color === color
     );
     if (clash) return { error: "That color is taken." };
+    // 2-player games must be diagonally opposite. When exactly two players are
+    // seated and the other already has a colour, this seat may only take that
+    // colour's diagonal partner (Red↔Yellow, Green↔Blue).
+    if (room.seats.size === 2) {
+      const other = [...room.seats.values()].find((s) => s.id !== clientId);
+      if (other?.color && color !== DIAGONAL_PARTNER[other.color]) {
+        return {
+          error: `Two-player games sit in opposite corners — you can only pick ${COLOR_LABEL[DIAGONAL_PARTNER[other.color]]}.`,
+        };
+      }
+    }
     seat.color = color;
     this.broadcast(room);
     return {};
@@ -308,6 +324,16 @@ export class RoomManager {
     const colorSeats = active
       .filter((s): s is Seat & { color: Color } => s.color !== null)
       .sort((a, b) => COLORS.indexOf(a.color) - COLORS.indexOf(b.color));
+
+    // Safety net: a 2-player game must be diagonally opposite. If the two chosen
+    // colours are adjacent, snap the second seat onto the first's diagonal partner.
+    if (
+      colorSeats.length === 2 &&
+      TEAM_OF[colorSeats[0].color] !== TEAM_OF[colorSeats[1].color]
+    ) {
+      colorSeats[1].color = DIAGONAL_PARTNER[colorSeats[0].color];
+    }
+
     const colors = colorSeats.map((s) => s.color);
 
     room.game = createGame(colors, room.mode);

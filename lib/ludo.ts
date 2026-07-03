@@ -36,6 +36,19 @@ export const TEAM_OF: Record<Color, number> = {
 export const TEAM_LABEL: Record<number, string> = { 0: "Red + Yellow", 1: "Green + Blue" };
 export const TEAM_NAME: Record<number, string> = { 0: "Team 1", 1: "Team 2" };
 
+// Diagonally opposite corners: Red↔Yellow, Green↔Blue (same pairs as 2v2 teams).
+// A 2-player game must use one of these pairs so players never sit adjacent.
+export const DIAGONAL_PARTNER: Record<Color, Color> = {
+  red: "yellow",
+  yellow: "red",
+  green: "blue",
+  blue: "green",
+};
+
+// Seat auto-assignment order — diagonal-first, so the first two players to join
+// default to OPPOSITE corners (Red + Yellow) rather than adjacent (Red + Green).
+export const SEAT_COLOR_PRIORITY: Color[] = ["red", "yellow", "green", "blue"];
+
 // ---------------------------------------------------------------------------
 // Power-ups
 // ---------------------------------------------------------------------------
@@ -250,8 +263,22 @@ function randomFreeRingCell(occupied: Set<number>): number | null {
   return free[Math.floor(Math.random() * free.length)];
 }
 
+// Ring cells currently holding a token — a power-up must never spawn on top of a
+// token, including the one that just landed on this cell to pick one up.
+function tokenOccupiedRingCells(state: GameState): Set<number> {
+  const occupied = new Set<number>();
+  for (const p of state.players) {
+    for (const t of p.tokens) {
+      const ring = ringIndexOf(t);
+      if (ring !== null) occupied.add(ring);
+    }
+  }
+  return occupied;
+}
+
 function relocatePowerup(state: GameState, type: PowerUpType): void {
   const occupied = new Set(state.powerups.map((p) => p.cell));
+  for (const cell of tokenOccupiedRingCells(state)) occupied.add(cell);
   const cell = randomFreeRingCell(occupied);
   if (cell !== null) state.powerups.push({ cell, type });
 }
@@ -509,13 +536,15 @@ export function applyMove(state: GameState, tokenId: string): MoveResult {
 
   next.awaitingMove = false;
 
-  // Bonus roll: a 6, a capture, or picking up a "+1" grants another roll.
-  const grantsBonus = dice === 6 || captured || gotPlusOne;
+  // Bonus roll: a 6, a capture, picking up a "+1", OR bringing a token fully
+  // home (reaching the centre) each grant another roll.
+  const grantsBonus = dice === 6 || captured || gotPlusOne || reachedGoal;
   if (grantsBonus) {
     next.bonusRoll = true;
     next.dice = null;
     let reason = "";
     if (gotPlusOne) reason = "➕ Bonus — roll again!";
+    else if (reachedGoal) reason = "🏠 Home! Bonus roll — go again.";
     else if (captured && dice === 6) reason = "Capture + a six! Roll again.";
     else if (captured) reason = "Capture! Bonus roll — go again.";
     else reason = "You rolled a six — roll again!";

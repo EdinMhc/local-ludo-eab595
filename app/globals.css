@@ -543,17 +543,18 @@ body {
   }
 }
 
-/* Token reached the center home → celebrate, then vanish. */
+/* Token touches the center → immediately slips into the house (no resting on
+   the middle square). A quick acknowledging pop, then it shrinks into the
+   center and vanishes. */
 .token.arrived {
-  animation: token-arrive 0.8s ease forwards;
+  animation: token-arrive 0.45s ease-in forwards;
   pointer-events: none;
   z-index: 12;
 }
 @keyframes token-arrive {
   0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
-  35% { transform: translate(-50%, -50%) scale(1.55) rotate(8deg); opacity: 1; }
-  70% { transform: translate(-50%, -50%) scale(1.2) rotate(-6deg); opacity: 0.9; }
-  100% { transform: translate(-50%, -50%) scale(0.12); opacity: 0; }
+  25% { transform: translate(-50%, -50%) scale(1.18); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(0.04); opacity: 0; }
 }
 .token.red { background: radial-gradient(circle at 35% 30%, #ff8a9a, var(--red)); }
 .token.green { background: radial-gradient(circle at 35% 30%, #6ee7a0, var(--green)); }

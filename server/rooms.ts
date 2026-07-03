@@ -96,7 +96,17 @@ export class RoomManager {
   private freeColor(room: Room): Color | null {
     const taken = new Set<Color>();
     room.seats.forEach((s) => s.color && taken.add(s.color));
-    // Diagonal-first priority so the first two players default to opposite corners.
+    // Teams: canonical order keeps the original alternating default partners.
+    if (room.mode === "teams") {
+      return COLORS.find((c) => !taken.has(c)) ?? null;
+    }
+    // FFA: when exactly one seat has a colour, prefer its diagonal partner so a
+    // 2-player room defaults to opposite corners and never forms an adjacent pair.
+    const colored = [...room.seats.values()].filter((s) => s.color);
+    if (colored.length === 1) {
+      const partner = DIAGONAL_PARTNER[colored[0].color!];
+      if (!taken.has(partner)) return partner;
+    }
     return SEAT_COLOR_PRIORITY.find((c) => !taken.has(c)) ?? null;
   }
 
@@ -267,10 +277,11 @@ export class RoomManager {
       (s) => s.id !== clientId && s.color === color
     );
     if (clash) return { error: "That color is taken." };
-    // 2-player games must be diagonally opposite. When exactly two players are
+    // 2-player FFA games must be diagonally opposite. When exactly two players are
     // seated and the other already has a colour, this seat may only take that
-    // colour's diagonal partner (Red↔Yellow, Green↔Blue).
-    if (room.seats.size === 2) {
+    // colour's diagonal partner (Red↔Yellow, Green↔Blue). Skipped in teams mode,
+    // which fills 4 seats and has its own diagonal pairing.
+    if (room.mode !== "teams" && room.seats.size === 2) {
       const other = [...room.seats.values()].find((s) => s.id !== clientId);
       if (other?.color && color !== DIAGONAL_PARTNER[other.color]) {
         return {

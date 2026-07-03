@@ -116,13 +116,15 @@ export default function GameView({
 
   const movableIds = useMemo(() => {
     const set = new Set<string>();
-    // Hold token highlights back until the die has finished settling.
-    if (!resolving && game && isMyTurn && playing && game.awaitingMove && game.dice != null && !game.winner) {
+    // Tappable as soon as the snapshot requires a move — do NOT gate on the roll
+    // animation, or a short server move-timer could auto-resolve before the die
+    // settles and steal the player's move.
+    if (game && isMyTurn && playing && game.awaitingMove && game.dice != null && !game.winner) {
       const player = game.players[game.currentPlayerIndex];
       movableTokens(player, game.dice).forEach((t) => set.add(t.id));
     }
     return set;
-  }, [game, isMyTurn, playing, resolving]);
+  }, [game, isMyTurn, playing]);
 
   // Animate the dice whenever a new roll happens (any player), for everyone.
   function triggerRollAnim() {

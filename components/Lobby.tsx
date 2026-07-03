@@ -32,7 +32,7 @@ export default function Lobby({
   // once the other player has a colour this seat is locked to its diagonal partner.
   const otherPlayer = room.players.find((p) => p.id !== clientId);
   const forcedColor: Color | null =
-    room.players.length === 2 && otherPlayer?.color
+    room.mode !== "teams" && room.players.length === 2 && otherPlayer?.color
       ? DIAGONAL_PARTNER[otherPlayer.color]
       : null;
 

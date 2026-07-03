@@ -597,9 +597,11 @@ body {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
-  /* Relative padding + relative pip size so pips stay centred at ANY die size
-     (desktop 78px, mobile action-bar 52px). Fixed px broke the mobile layout. */
-  padding: 14%;
+  /* Count-independent inset via a per-size var (NOT % — that resolves against the
+     flex row and doubles when two dice share a row). Pip size stays relative to
+     the track so faces are centred at any die size (78px desktop / 52px mobile). */
+  --dice-pad: 11px;
+  padding: var(--dice-pad);
   box-shadow: 0 10px 22px -6px rgba(0, 0, 0, 0.6), inset 0 2px 3px rgba(255, 255, 255, 0.9);
 }
 .pip {
@@ -1081,7 +1083,7 @@ body {
   }
   .ab-main { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .ab-dice { flex: 0 0 auto; }
-  .ab-dice .dice { margin: 0; width: 52px; height: 52px; }
+  .ab-dice .dice { margin: 0; width: 52px; height: 52px; --dice-pad: 7px; }
   .dice-cluster { margin: 0; }
   .dice-row { gap: 8px; }
   .ab-controls { flex: 1; display: flex; flex-direction: column; gap: 6px; }

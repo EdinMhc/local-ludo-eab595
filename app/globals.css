@@ -947,6 +947,7 @@ body {
   flex-wrap: wrap;
 }
 .avatar-wrap {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -955,6 +956,29 @@ body {
   transition: opacity 0.2s, transform 0.2s;
 }
 .avatar-wrap.active { opacity: 1; transform: translateY(-2px); }
+/* Roll indicator floating above an opponent's avatar while it's their turn. */
+.avatar-dice {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 6px;
+  z-index: 3;
+  pointer-events: none;
+  animation: avatar-dice-pop 0.2s ease;
+}
+.avatar-dice .dice {
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  border-radius: 8px;
+  --dice-pad: 5px;
+  box-shadow: 0 6px 14px -4px rgba(0, 0, 0, 0.7), inset 0 1px 2px rgba(255, 255, 255, 0.9);
+}
+@keyframes avatar-dice-pop {
+  from { transform: translateX(-50%) translateY(4px) scale(0.7); opacity: 0; }
+  to { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; }
+}
 .avatar-ring {
   width: 56px;
   height: 56px;

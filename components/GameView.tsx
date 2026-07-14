@@ -29,6 +29,9 @@ function PlayerAvatar({
   shielded = false,
   deadline,
   total,
+  showDice = false,
+  diceValue = null,
+  diceRolling = false,
 }: {
   name: string;
   color: Color;
@@ -37,6 +40,12 @@ function PlayerAvatar({
   shielded?: boolean;
   deadline: number | null;
   total: number;
+  // A small roll indicator that floats above this player's avatar. Shown for the
+  // player whose turn it is on the OTHER clients' screens, so everyone sees whose
+  // dice is rolling without hijacking their own centre dice.
+  showDice?: boolean;
+  diceValue?: number | null;
+  diceRolling?: boolean;
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -63,6 +72,11 @@ function PlayerAvatar({
 
   return (
     <div className={`avatar-wrap ${active ? "active" : ""} ${low ? "low" : ""} ${shielded ? "shielded" : ""}`}>
+      {showDice && (
+        <div className="avatar-dice">
+          <Dice value={diceValue} rolling={diceRolling} />
+        </div>
+      )}
       <div className="avatar-ring" style={{ background: ring }}>
         <div className="avatar" style={{ background: COLOR_HEX[color] }}>
           {initial}
@@ -100,6 +114,10 @@ export default function GameView({
   // indicator / controls don't flip to the next player until the die has settled.
   const [resolving, setResolving] = useState(false);
   const [dicePicker, setDicePicker] = useState(false);
+  // The local player's OWN last settled roll. The centre dice is personal — it
+  // shows my number and only spins on my turn; opponents' rolls float above their
+  // avatars instead of hijacking my centre dice.
+  const [myLastRoll, setMyLastRoll] = useState<number | null>(null);
   const prevRollId = useRef(game?.rollId ?? 0);
   const rollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -159,6 +177,14 @@ export default function GameView({
     if (holdTimer.current) clearTimeout(holdTimer.current);
   }, []);
 
+  // Remember my own roll whenever I have a settled result to act on, so the centre
+  // dice keeps showing MY number while I'm waiting on opponents.
+  useEffect(() => {
+    if (game && isMyTurn && game.awaitingMove && game.dice != null) {
+      setMyLastRoll(game.dice);
+    }
+  }, [game, isMyTurn]);
+
   if (!game) return null;
 
   // Roll is gated ONLY by server state — never by the local animation flag,
@@ -184,17 +210,22 @@ export default function GameView({
   // player's turn and no roll animation is resolving.
   function diceCluster() {
     const diceDisabled = !canRoll || resolving;
+    // Personal centre dice: shows MY roll and only spins on MY turn. When it's an
+    // opponent's turn their roll animates above their avatar (see players-strip),
+    // never here.
+    const centerValue = isMyTurn ? displayedDice : myLastRoll;
+    const centerRolling = rolling && isMyTurn;
     return (
       <div className={`dice-cluster ${showDouble ? "double" : ""}`}>
         <div className="dice-row">
           <Dice
-            value={displayedDice}
-            rolling={rolling}
+            value={centerValue}
+            rolling={centerRolling}
             interactive={playing}
             disabled={diceDisabled}
             onRoll={handleRoll}
           />
-          {showDouble && <Dice value={displayedDice} rolling={rolling} />}
+          {showDouble && <Dice value={centerValue} rolling={centerRolling} />}
         </div>
         {playing && <span className="dice-hint">{rollLabel}</span>}
         {showDouble && <span className="dice-badge dbl">⚡ Double distance</span>}
@@ -291,18 +322,27 @@ export default function GameView({
 
       {/* Players with turn-timer rings */}
       <div className="players-strip">
-        {room.players.map((p) => (
-          <PlayerAvatar
-            key={p.id}
-            name={p.name}
-            color={p.color ?? "red"}
-            active={p.id === room.currentPlayerId && playing}
-            connected={p.connected}
-            shielded={!!game.players.find((gp) => gp.color === p.color)?.shielded}
-            deadline={room.turnDeadline}
-            total={room.moveTimerSeconds}
-          />
-        ))}
+        {room.players.map((p) => {
+          const isCurrent = p.id === room.currentPlayerId && playing;
+          // Float a roll indicator above every player EXCEPT me — my own dice lives
+          // in the centre. Everyone thus sees the current roller's dice by their name.
+          const showDice = isCurrent && p.id !== clientId;
+          return (
+            <PlayerAvatar
+              key={p.id}
+              name={p.name}
+              color={p.color ?? "red"}
+              active={isCurrent}
+              connected={p.connected}
+              shielded={!!game.players.find((gp) => gp.color === p.color)?.shielded}
+              deadline={room.turnDeadline}
+              total={room.moveTimerSeconds}
+              showDice={showDice}
+              diceValue={displayedDice}
+              diceRolling={rolling}
+            />
+          );
+        })}
       </div>
 
       <div className="game-layout">

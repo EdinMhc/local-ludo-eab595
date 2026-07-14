@@ -352,19 +352,16 @@ export default function GameView({
         </div>
       </div>
 
-      {/* Mobile fixed action bar — roll & power-ups without scrolling */}
+      {/* Mobile fixed action bar — centered dice with power-ups stacked below */}
       {playing && (
         <div className="action-bar">
-          <div className="ab-inventory">{renderInventory()}</div>
           <div className="ab-main">
-            <div className="ab-dice">{diceCluster()}</div>
-            <div className="ab-controls">
-              <div className="ab-status" style={{ color: !resolving && currentColor ? COLOR_HEX[currentColor] : "#fff" }}>
-                {turnLabel}
-              </div>
-              <div className="ab-roll-hint">{rollLabel}</div>
+            <div className="ab-status" style={{ color: !resolving && currentColor ? COLOR_HEX[currentColor] : "#fff" }}>
+              {turnLabel}
             </div>
+            <div className="ab-dice">{diceCluster()}</div>
           </div>
+          <div className="ab-inventory">{renderInventory()}</div>
         </div>
       )}
     </div>

@@ -634,12 +634,12 @@ body {
 .dice.clickable:focus-visible {
   box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.9), 0 10px 22px -6px rgba(0, 0, 0, 0.6);
 }
-.dice.clickable.disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-  filter: grayscale(0.4);
-}
-/* Never show the hover lift while the die is mid-roll. */
+/* Disabled = can't click (not your turn / awaiting a move), but the settled face
+   stays fully white so the rolled result reads clearly. */
+.dice.clickable.disabled { cursor: not-allowed; }
+/* Gray only during the "throw" itself; the face snaps back to white the instant
+   the roll animation ends and the result is shown. */
+.dice.rolling { opacity: 0.55; filter: grayscale(0.55); }
 .dice.clickable.rolling { cursor: default; }
 
 .dice.rolling { animation: dice-roll 0.85s ease-in-out infinite; }

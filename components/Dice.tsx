@@ -15,9 +15,18 @@ const FACES: Record<number, number[]> = {
 export default function Dice({
   value,
   rolling,
+  interactive = false,
+  disabled = false,
+  onRoll,
 }: {
   value: number | null;
   rolling: boolean;
+  // When interactive, the dice graphic itself is the roll target (replaces the
+  // old "Roll Dice" button). `disabled` mirrors the old button's disabled state
+  // (not your turn OR an animation is resolving).
+  interactive?: boolean;
+  disabled?: boolean;
+  onRoll?: () => void;
 }) {
   // While rolling, rapidly cycle random faces, then settle on the real value.
   const [face, setFace] = useState<number | null>(value);
@@ -31,8 +40,33 @@ export default function Dice({
   }, [rolling, value]);
 
   const pips = face ? FACES[face] : [];
+  const clickable = interactive && !disabled;
+
+  function handleRoll() {
+    if (clickable) onRoll?.();
+  }
+
   return (
-    <div className={`dice ${rolling ? "rolling" : ""}`} aria-label={`Dice ${face ?? ""}`}>
+    <div
+      className={`dice ${rolling ? "rolling" : ""} ${
+        interactive ? (clickable ? "clickable" : "clickable disabled") : ""
+      }`}
+      aria-label={`Dice ${face ?? ""}`}
+      role={interactive ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      aria-disabled={interactive ? disabled : undefined}
+      onClick={interactive ? handleRoll : undefined}
+      onKeyDown={
+        interactive
+          ? (e) => {
+              if (clickable && (e.key === "Enter" || e.key === " ")) {
+                e.preventDefault();
+                handleRoll();
+              }
+            }
+          : undefined
+      }
+    >
       {Array.from({ length: 9 }, (_, i) => (
         <span
           key={i}

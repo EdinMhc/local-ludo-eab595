@@ -179,13 +179,24 @@ export default function GameView({
   }
 
   // Dice cluster — two dice when Double is armed, plus a Dice-Control cue.
+  // The primary die IS the roll trigger (replaces the old "Roll Dice" button):
+  // interactive whenever a game is in progress, disabled unless it's this
+  // player's turn and no roll animation is resolving.
   function diceCluster() {
+    const diceDisabled = !canRoll || resolving;
     return (
       <div className={`dice-cluster ${showDouble ? "double" : ""}`}>
         <div className="dice-row">
-          <Dice value={displayedDice} rolling={rolling} />
+          <Dice
+            value={displayedDice}
+            rolling={rolling}
+            interactive={playing}
+            disabled={diceDisabled}
+            onRoll={handleRoll}
+          />
           {showDouble && <Dice value={displayedDice} rolling={rolling} />}
         </div>
+        {playing && <span className="dice-hint">{rollLabel}</span>}
         {showDouble && <span className="dice-badge dbl">⚡ Double distance</span>}
         {forcedDice != null && <span className="dice-badge ctrl">🎲 Locked to {forcedDice}</span>}
       </div>
@@ -318,12 +329,6 @@ export default function GameView({
 
           {diceCluster()}
 
-          {playing && (
-            <button className="btn primary roll-btn" onClick={handleRoll} disabled={!canRoll || resolving}>
-              {rollLabel}
-            </button>
-          )}
-
           {renderInventory()}
 
           <div className="scoreboard">
@@ -357,9 +362,7 @@ export default function GameView({
               <div className="ab-status" style={{ color: !resolving && currentColor ? COLOR_HEX[currentColor] : "#fff" }}>
                 {turnLabel}
               </div>
-              <button className="btn primary ab-roll" onClick={handleRoll} disabled={!canRoll || resolving}>
-                {rollLabel}
-              </button>
+              <div className="ab-roll-hint">{rollLabel}</div>
             </div>
           </div>
         </div>

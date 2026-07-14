@@ -384,7 +384,15 @@ body {
   border-radius: 12px;
 }
 
-.roll-btn { margin-top: 16px; }
+/* Roll hint captions (the dice itself is now the roll target — no button). */
+.dice-hint {
+  margin-top: 2px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted, #94a3b8);
+  text-align: center;
+}
+.ab-roll-hint { font-size: 0.82rem; font-weight: 700; color: var(--muted, #94a3b8); }
 
 .scoreboard { margin-top: 22px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 16px; }
 .scoreboard h3 {
@@ -613,6 +621,28 @@ body {
   border-radius: 50%;
   place-self: center;
 }
+/* Clickable dice = the roll trigger (replaces the old "Roll Dice" button). */
+.dice.clickable {
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+  outline: none;
+}
+.dice.clickable:not(.disabled):hover {
+  transform: translateY(-3px) scale(1.04);
+  box-shadow: 0 16px 30px -8px rgba(0, 0, 0, 0.7), inset 0 2px 3px rgba(255, 255, 255, 0.9);
+}
+.dice.clickable:not(.disabled):active { transform: translateY(-1px) scale(0.98); }
+.dice.clickable:focus-visible {
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.9), 0 10px 22px -6px rgba(0, 0, 0, 0.6);
+}
+.dice.clickable.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  filter: grayscale(0.4);
+}
+/* Never show the hover lift while the die is mid-roll. */
+.dice.clickable.rolling { cursor: default; }
+
 .dice.rolling { animation: dice-roll 0.85s ease-in-out infinite; }
 @keyframes dice-roll {
   0% { transform: rotate(0) scale(1); }
@@ -1085,11 +1115,13 @@ body {
   .ab-main { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .ab-dice { flex: 0 0 auto; }
   .ab-dice .dice { margin: 0; width: 52px; height: 52px; --dice-pad: 7px; }
+  /* The dice is now the roll target — keep it a comfortably large tap area on
+     mobile (>= 60px, well above the 44px minimum). */
+  .ab-dice .dice.clickable { width: 62px; height: 62px; --dice-pad: 8px; }
   .dice-cluster { margin: 0; }
   .dice-row { gap: 8px; }
   .ab-controls { flex: 1; display: flex; flex-direction: column; gap: 6px; }
   .ab-status { font-weight: 800; font-size: 0.92rem; }
-  .ab-roll { min-height: 54px; }
   /* Compact inventory in the bar: horizontal, icon + count only. */
   .ab-inventory .inventory { margin: 0; border-top: none; padding-top: 0; }
   .ab-inventory .inv-header { margin-bottom: 6px; }

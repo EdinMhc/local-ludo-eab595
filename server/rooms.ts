@@ -68,6 +68,15 @@ export interface RoomEmitter {
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous chars
 
+// Roll-suspense window. When a roll passes the turn (three-sixes forfeit or no
+// legal move), the client plays the full dice spin then holds the settled face a
+// beat before revealing the next player (GameView: ROLL_ANIM_MS + ROLL_HOLD_MS).
+// The server still broadcasts the snapshot immediately (never buffer state — that
+// desyncs this timer), but it grants the incoming player this much extra time on
+// their move-timer so they aren't docked the seconds spent watching the animation.
+// Keep in sync with the client constants in components/GameView.tsx.
+const TURN_REVEAL_GRACE_MS = 2200;
+
 export class RoomManager {
   private rooms = new Map<string, Room>();
   private socketIndex = new Map<string, string>(); // socketId → room code
@@ -373,8 +382,12 @@ export class RoomManager {
     if (room.game.winner) return;
     if (room.game.awaitingMove) return;
     if (this.currentPlayerId(room) !== clientId) return;
-    room.game = rollDice(room.game).state;
-    this.postAction(room);
+    const result = rollDice(room.game);
+    room.game = result.state;
+    // On an auto-pass the turn changes on this same roll — give the incoming
+    // player the roll-suspense grace so their move-timer effectively starts when
+    // the animation + hold finishes on their screen, not while it's still playing.
+    this.postAction(room, result.autoPassed ? TURN_REVEAL_GRACE_MS : 0);
   }
 
   move(clientId: string, tokenId: string): void {
@@ -529,12 +542,16 @@ export class RoomManager {
   }
 
   // ---- move timer ---------------------------------------------------------
-  private postAction(room: Room): void {
-    this.armTimer(room);
+  private postAction(room: Room, graceMs = 0): void {
+    this.armTimer(room, graceMs);
     this.broadcast(room);
   }
 
-  private armTimer(room: Room): void {
+  // `graceMs` extends the deadline for a turn that only becomes interactive after a
+  // client-side reveal delay (the roll-suspense window). It also doubles as the
+  // soft-lock fallback: even if a client's animation never signals completion, the
+  // server still auto-resolves once this (grace + full move-timer) window elapses.
+  private armTimer(room: Room, graceMs = 0): void {
     if (room.turnTimer) {
       clearTimeout(room.turnTimer);
       room.turnTimer = null;
@@ -544,7 +561,7 @@ export class RoomManager {
       room.turnDeadline = null;
       return;
     }
-    const ms = room.moveTimerSeconds * 1000;
+    const ms = room.moveTimerSeconds * 1000 + Math.max(0, graceMs);
     room.turnDeadline = Date.now() + ms;
     room.turnTimer = setTimeout(() => this.autoResolve(room.code), ms);
   }
